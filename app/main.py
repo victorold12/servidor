@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import agent, connectors, health, research, scrape
+from .routers import agent, connectors, google, health, mcp_client, research, scrape
 
 app = FastAPI(title=settings.site_title, version="0.1.0")
 
@@ -24,6 +24,8 @@ app.include_router(scrape.router, prefix="/api", tags=["scrape"])
 app.include_router(research.router, prefix="/api", tags=["research"])
 app.include_router(agent.router, prefix="/api", tags=["agent"])
 app.include_router(connectors.router, prefix="/api/connectors", tags=["connectors"])
+app.include_router(google.router, prefix="/api/connectors/google", tags=["google"])
+app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"])
 
 
 @app.get("/")

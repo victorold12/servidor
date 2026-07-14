@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     # CORS — domínios do site que podem chamar este backend (separados por vírgula).
     allowed_origins: str = "*"
 
-    # Conectores (precisam das chaves do usuário — ver README).
+    # Conectores (precisam das chaves do usuário — todas gratuitas. Ver README).
     notion_token: str = ""
+    figma_token: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/connectors/google/callback"
 
     request_timeout: float = 60.0
 
