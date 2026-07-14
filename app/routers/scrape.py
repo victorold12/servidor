@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..services import scrape_url, web_search
+from ..services import image_search, scrape_url, web_search
 
 router = APIRouter()
 
@@ -14,6 +14,11 @@ class ScrapeIn(BaseModel):
 class SearchIn(BaseModel):
     q: str
     max: int = 6
+
+
+class ImagesIn(BaseModel):
+    q: str
+    max: int = 10
 
 
 @router.post("/scrape")
@@ -32,5 +37,14 @@ async def search(body: SearchIn):
     """Busca web sem chave (DuckDuckGo). Retorna título, url e trecho."""
     try:
         return {"results": await web_search(body.q, body.max)}
+    except Exception as exc:  # noqa: BLE001
+        return {"results": [], "error": str(exc)}
+
+
+@router.post("/images")
+async def images(body: ImagesIn):
+    """Busca imagens sobre o tema (DuckDuckGo). Retorna thumbnail, imagem e fonte."""
+    try:
+        return {"results": await image_search(body.q, body.max)}
     except Exception as exc:  # noqa: BLE001
         return {"results": [], "error": str(exc)}

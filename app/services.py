@@ -7,6 +7,7 @@
   scraping — pode quebrar se o DuckDuckGo mudar o HTML. Troque por uma API paga
   (Brave, Serper, Tavily) quando quiser robustez.
 """
+import re
 from urllib.parse import urlparse, parse_qs, unquote
 
 import httpx
@@ -80,3 +81,43 @@ async def web_search(query: str, max_results: int = 6) -> list[dict]:
             }
         )
     return results
+
+
+async def image_search(query: str, max_results: int = 10) -> list[dict]:
+    """Busca de imagens no DuckDuckGo (sem chave). Precisa de um token 'vqd' que
+    vem da página HTML antes de chamar o endpoint de imagens.
+
+    Honesto: é scraping de um endpoint interno do DuckDuckGo — pode quebrar se
+    eles mudarem. Troque por Bing Image Search / SerpAPI (com chave) pra robustez.
+    """
+    if not query.strip():
+        return []
+    async with httpx.AsyncClient(
+        timeout=settings.request_timeout, headers={"User-Agent": _UA}, follow_redirects=True
+    ) as client:
+        page = await client.get("https://duckduckgo.com/", params={"q": query, "iar": "images"})
+        match = re.search(r'vqd=["\']?([\d-]+)', page.text)
+        if not match:
+            return []
+        vqd = match.group(1)
+        resp = await client.get(
+            "https://duckduckgo.com/i.js",
+            params={"l": "br-pt", "o": "json", "q": query, "vqd": vqd, "p": "1"},
+            headers={"Referer": "https://duckduckgo.com/", "User-Agent": _UA},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    out = []
+    for item in data.get("results", [])[:max_results]:
+        out.append(
+            {
+                "image": item.get("image"),
+                "thumbnail": item.get("thumbnail") or item.get("image"),
+                "title": item.get("title", ""),
+                "source": item.get("url", ""),
+                "width": item.get("width"),
+                "height": item.get("height"),
+            }
+        )
+    return out
