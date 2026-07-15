@@ -47,9 +47,30 @@ produção, em vez de `*`.
 | `/api/search` | POST `{q, max}` | Busca web sem chave (DuckDuckGo). Retorna título, link e trecho |
 | `/api/deep-research` | POST `{topic}` | **Pesquisa profunda no servidor** com progresso via SSE: sub-perguntas → buscas → relatório com fontes |
 | `/api/agent` | POST `{messages}` | **Deep agent leve**: o modelo usa ferramentas (`web_search`, `fetch_url`) em várias rodadas até resolver |
+| `/api/autonomous` | POST `{task}` | **Agente autônomo avançado** com progresso via SSE: planeja → usa ferramentas (`web_search`, `fetch_url`, `notion_search`, `note`, `update_plan`) em várias rodadas, re-planeja sozinho, e entrega. Tetos de passos/tokens contra gasto infinito |
 
 A chave do OpenRouter vai no header **`X-OR-Key`** (a chave do usuário, vinda do
 navegador). O servidor não guarda chave nenhuma.
+
+### `/api/autonomous` — como funciona e limites honestos
+
+O modelo trabalha como agente: faz um **plano**, executa **ferramentas** em várias
+rodadas guardando **notas** numa memória de trabalho, **re-planeja** quando descobre
+algo que muda a rota, e só então chama `finish`. Cada passo vira um evento SSE
+(`plan`, `thought`, `action`, `observation`, `usage`, `answer`, `done`, `error`).
+
+- **Custo:** cada passo é uma chamada ao OpenRouter → gasta tokens. Use um modelo
+  **forte em tool-calling** (ex.: `openai/gpt-4.1`); modelos fracos erram a escolha de
+  ferramenta e desperdiçam passos. O campo `max_steps` (padrão 12, teto 30) é a trava
+  dura; `max_tokens_budget` (opcional) aborta ao estourar um total de tokens.
+- **Recuperação de erro:** ferramenta que falha vira observação (não derruba o agente);
+  ele lê o erro e tenta outra rota. Há também anti-loop (mesma chamada 3× → aviso).
+- **O que NÃO é:** não opera o navegador nem preenche formulários (isso é um runtime
+  tipo Manus/Perplexity Computer, fora de um backend HTTP). Ele opera busca web, leitura
+  de páginas e os conectores configurados (Notion).
+
+Request: `{ "task": "...", "model": "openai/gpt-4.1", "max_steps": 12, "max_tokens_budget": 0 }`
+(chave do OpenRouter no header `X-OR-Key`, como nas outras rotas).
 
 ## O que precisa da SUA chave (esqueleto pronto)
 
