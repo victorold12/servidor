@@ -1,0 +1,23 @@
+# Blueprint do Render — deixa o deploy quase automático.
+# No Render: New > Blueprint > aponta pro repo, ele lê isto.
+services:
+  - type: web
+    name: vtz-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # Python fixo pra evitar o problema do 3.14 com pydantic
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Domínios do site que podem chamar o backend. Troque * pela URL do seu
+      # site depois (ex.: https://victorold12.github.io) pra ficar seguro.
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      # Opcional: chaves dos conectores como variaveis (persistem entre restarts).
+      # Se preferir, deixe em branco e configure pelo site (aba Conectores).
+      # - key: NOTION_TOKEN
+      #   sync: false
+      # - key: FIGMA_TOKEN
+      #   sync: false
