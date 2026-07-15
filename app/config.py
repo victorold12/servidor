@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # CORS — domínios do site que podem chamar este backend (separados por vírgula).
     allowed_origins: str = "*"
 
+    # Token de acesso (opcional). Setado como env var no Render/servidor — NUNCA
+    # pelo site. Sem ele, o backend fica aberto (ok só em uso 100% local).
+    # Com ele, toda chamada (exceto /api/health) exige o header X-Backend-Token.
+    backend_token: str = ""
+
     # Conectores (precisam das chaves do usuário — todas gratuitas. Ver README).
     notion_token: str = ""
     figma_token: str = ""

@@ -14,6 +14,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .config import settings
+from .security import assert_public_url
 
 _UA = "Mozilla/5.0 (compatible; VTzBot/1.0)"
 
@@ -21,11 +22,27 @@ _UA = "Mozilla/5.0 (compatible; VTzBot/1.0)"
 async def scrape_url(url: str) -> dict:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    assert_public_url(url)
+    # Segue redirects manualmente, validando CADA salto — com follow_redirects=True
+    # um atacante poderia usar uma URL pública que redireciona pra um IP interno
+    # e contornar a checagem inicial (SSRF via redirect).
     async with httpx.AsyncClient(
-        timeout=settings.request_timeout, follow_redirects=True, headers={"User-Agent": _UA}
+        timeout=settings.request_timeout, follow_redirects=False, headers={"User-Agent": _UA}
     ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
+        current = url
+        for _ in range(5):
+            resp = await client.get(current)
+            if resp.is_redirect:
+                nxt = resp.headers.get("location")
+                if not nxt:
+                    break
+                current = str(httpx.URL(current).join(nxt))
+                assert_public_url(current)
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            raise ValueError("redirecionamentos demais")
         html = resp.text
         final_url = str(resp.url)
 

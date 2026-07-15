@@ -15,6 +15,11 @@ services:
       # site depois (ex.: https://victorold12.github.io) pra ficar seguro.
       - key: ALLOWED_ORIGINS
         value: "*"
+      # Token de acesso — defina um valor manualmente no painel do Render depois
+      # do primeiro deploy (Environment > Add). Sem ele, o backend fica aberto.
+      # Cole o mesmo valor no site em Config > Backend VTz OS > Token de acesso.
+      - key: BACKEND_TOKEN
+        sync: false
       # Opcional: chaves dos conectores como variaveis (persistem entre restarts).
       # Se preferir, deixe em branco e configure pelo site (aba Conectores).
       # - key: NOTION_TOKEN

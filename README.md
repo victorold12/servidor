@@ -13,6 +13,31 @@ CORS), busca web, deep research, agente com ferramentas e conectores externos.
 
 ---
 
+## Segurança (leia antes de publicar na internet)
+
+Rodando só na sua máquina (`localhost`), o backend é seguro por padrão — ninguém
+de fora alcança. **Publicado na nuvem (Render/Railway/Fly), qualquer um que
+souber a URL pode usá-lo** — inclusive abusar do `/api/scrape` como proxy pra
+raspar sites às suas custas. Três camadas já prontas:
+
+1. **Token de acesso.** Defina `BACKEND_TOKEN` (uma senha longa qualquer) nas
+   variáveis de ambiente do Render/Railway/Fly. Com isso setado, toda rota
+   (exceto `/api/health`) exige o header `X-Backend-Token` igual. Cole o MESMO
+   valor no site em Config → Backend VTz OS → "Token de acesso". Sem
+   `BACKEND_TOKEN` configurado, o backend fica aberto (ok só em uso local).
+2. **Rate limit.** 30 requisições / 5 minutos por IP nas rotas que custam
+   (scrape, search, images, deep-research, agent, conectores, mcp). Automático,
+   sem configuração.
+3. **Guarda de SSRF.** `/api/scrape` (e a ferramenta `fetch_url` do agente)
+   recusam URLs que apontem pra rede interna (localhost, 10.x/172.16-31.x/
+   192.168.x, e o endereço de metadata da cloud `169.254.169.254`) — inclusive
+   se a URL pública redirecionar pra lá.
+
+`ALLOWED_ORIGINS` (CORS) também vale a pena travar no domínio do seu site em
+produção, em vez de `*`.
+
+---
+
 ## O que já funciona (sem depender de terceiros)
 
 | Endpoint | Método | O que faz |
