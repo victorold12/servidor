@@ -38,7 +38,18 @@ navegador). O servidor não guarda chave nenhuma.
 
 ## Como rodar
 
-**Windows:** dê dois cliques em `run.bat` (cria venv, instala tudo, sobe o servidor).
+**Windows (primeira vez):** dê dois cliques em `run.bat` (cria venv, instala tudo,
+sobe o servidor). O site **detecta o backend sozinho** em `localhost:8000` — não
+precisa colar URL nenhuma.
+
+**Sem a janela do cmd (depois da 1ª vez):** dê dois cliques em
+`iniciar-invisivel.vbs` — sobe o backend em segundo plano, sem janela.
+Para ligar **sozinho quando o PC inicia**: aperte `Win+R`, digite `shell:startup`,
+e coloque um atalho do `iniciar-invisivel.vbs` nessa pasta.
+
+**Truly automático (recomendado):** publique o backend na nuvem (Render/Railway/
+Fly — planos grátis). Aí ele fica sempre no ar, com HTTPS, e o site publicado fala
+com ele sem você abrir nada. Veja "Onde hospedar" abaixo.
 
 **Linux/macOS:**
 ```bash
