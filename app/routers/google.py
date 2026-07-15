@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
 from ..config import settings
+from .. import store
 
 router = APIRouter()
 
@@ -37,11 +38,11 @@ _token: dict = {}
 
 
 def _require_config():
-    if not (settings.google_client_id and settings.google_client_secret):
+    if not (store.get_secret("google_client_id") and store.get_secret("google_client_secret")):
         raise HTTPException(
             status_code=400,
-            detail="Google não configurado. Preencha GOOGLE_CLIENT_ID, "
-                   "GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI no .env (ver docstring).",
+            detail="Google não configurado. Preencha Client ID e Client Secret na "
+                   "aba Conectores do site (crie o app OAuth em console.cloud.google.com).",
         )
 
 
@@ -49,8 +50,8 @@ def _require_config():
 def authorize():
     _require_config()
     params = {
-        "client_id": settings.google_client_id,
-        "redirect_uri": settings.google_redirect_uri,
+        "client_id": store.get_secret("google_client_id"),
+        "redirect_uri": store.get_secret("google_redirect_uri"),
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
@@ -71,9 +72,9 @@ async def callback(code: str | None = None, error: str | None = None):
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
-                "redirect_uri": settings.google_redirect_uri,
+                "client_id": store.get_secret("google_client_id"),
+                "client_secret": store.get_secret("google_client_secret"),
+                "redirect_uri": store.get_secret("google_redirect_uri"),
                 "grant_type": "authorization_code",
             },
         )
@@ -101,8 +102,8 @@ async def _access_token() -> str:
             "https://oauth2.googleapis.com/token",
             data={
                 "refresh_token": _token["refresh_token"],
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_id": store.get_secret("google_client_id"),
+                "client_secret": store.get_secret("google_client_secret"),
                 "grant_type": "refresh_token",
             },
         )
@@ -116,7 +117,7 @@ async def _access_token() -> str:
 
 @router.get("/status")
 def google_status():
-    return {"configured": bool(settings.google_client_id), "connected": bool(_token.get("access_token"))}
+    return {"configured": bool(store.get_secret("google_client_id")), "connected": bool(_token.get("access_token"))}
 
 
 @router.get("/gmail/messages")

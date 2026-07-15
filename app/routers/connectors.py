@@ -12,17 +12,39 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..config import settings
+from .. import store
 
 router = APIRouter()
 
 
 @router.get("/status")
 def status():
+    st = store.status()
     return {
-        "notion": bool(settings.notion_token),
-        "figma": bool(settings.figma_token),
-        "google": bool(settings.google_client_id and settings.google_client_secret),
+        "notion": st.get("notion_token", False),
+        "figma": st.get("figma_token", False),
+        "google": bool(store.get_secret("google_client_id") and store.get_secret("google_client_secret")),
     }
+
+
+class ConfigIn(BaseModel):
+    notion_token: str | None = None
+    figma_token: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+
+
+@router.get("/config")
+def get_config():
+    """Quais chaves estão setadas (nunca devolve o valor em si)."""
+    return store.status()
+
+
+@router.post("/config")
+def set_config(body: ConfigIn):
+    """Salva as chaves enviadas pelo site. "" limpa; ausente mantém."""
+    store.set_secrets(body.model_dump(exclude_none=True))
+    return {"ok": True, **store.status()}
 
 
 # ---------------- Notion ----------------
@@ -32,18 +54,18 @@ class NotionSearchIn(BaseModel):
 
 @router.post("/notion/search")
 async def notion_search(body: NotionSearchIn):
-    if not settings.notion_token:
+    token = store.get_secret("notion_token")
+    if not token:
         raise HTTPException(
             status_code=400,
-            detail="NOTION_TOKEN não configurado. Crie a integração em "
-                   "notion.so/my-integrations, cole o token no .env e compartilhe "
-                   "as páginas com a integração.",
+            detail="Token do Notion não configurado. Cole-o na aba Conectores do site "
+                   "(crie a integração em notion.so/my-integrations e compartilhe as páginas com ela).",
         )
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         resp = await client.post(
             "https://api.notion.com/v1/search",
             headers={
-                "Authorization": f"Bearer {settings.notion_token}",
+                "Authorization": f"Bearer {token}",
                 "Notion-Version": "2022-06-28",
                 "Content-Type": "application/json",
             },
@@ -56,13 +78,14 @@ async def notion_search(body: NotionSearchIn):
 
 # ---------------- Figma ----------------
 def _figma_headers():
-    if not settings.figma_token:
+    token = store.get_secret("figma_token")
+    if not token:
         raise HTTPException(
             status_code=400,
-            detail="FIGMA_TOKEN não configurado. Gere um Personal Access Token em "
-                   "Figma > Settings > Personal access tokens e coloque no .env.",
+            detail="Token do Figma não configurado. Cole-o na aba Conectores do site "
+                   "(Figma > Settings > Personal access tokens).",
         )
-    return {"X-Figma-Token": settings.figma_token}
+    return {"X-Figma-Token": token}
 
 
 @router.get("/figma/me")
