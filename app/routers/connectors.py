@@ -73,7 +73,30 @@ async def notion_search(body: NotionSearchIn):
         )
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    return {"results": _normalize_notion(resp.json().get("results", []))}
+
+
+def _normalize_notion(results: list) -> list:
+    """Enxuga o JSON cru do Notion pra {id, title, url, type, edited} — o site
+    consegue renderizar direto, sem cavar a estrutura verbosa da API."""
+    out = []
+    for r in results:
+        title = ""
+        # páginas: o título vem numa propriedade do tipo "title"; DBs: em "title" no topo
+        for v in (r.get("properties") or {}).values():
+            if v.get("type") == "title":
+                title = "".join(t.get("plain_text", "") for t in v.get("title", []))
+                break
+        if not title and r.get("object") == "database":
+            title = "".join(t.get("plain_text", "") for t in r.get("title", []))
+        out.append({
+            "id": r.get("id"),
+            "title": title or "(sem título)",
+            "url": r.get("url"),
+            "type": r.get("object"),  # "page" ou "database"
+            "edited": r.get("last_edited_time"),
+        })
+    return out
 
 
 # ---------------- Figma ----------------

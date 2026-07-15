@@ -15,6 +15,7 @@ Nota honesta: o token é guardado EM MEMÓRIA (some se o servidor reinicia). Par
 produção, persista em banco/arquivo cifrado. Isto é um scaffold funcional, não
 uma solução multiusuário.
 """
+import asyncio
 import time
 from urllib.parse import urlencode
 
@@ -120,18 +121,56 @@ def google_status():
     return {"configured": bool(store.get_secret("google_client_id")), "connected": bool(_token.get("access_token"))}
 
 
+def _header(headers: list, name: str) -> str:
+    for h in headers:
+        if h.get("name", "").lower() == name.lower():
+            return h.get("value", "")
+    return ""
+
+
 @router.get("/gmail/messages")
 async def gmail_messages(q: str = "", max_results: int = 10):
+    """Lista e-mails JÁ ENRIQUECIDOS: assunto, remetente, data e trecho — não só IDs.
+
+    A API do Gmail devolve só {id, threadId} no list; aqui buscamos o metadata de
+    cada mensagem em paralelo pra o resultado ser realmente útil no site.
+    """
     token = await _access_token()
+    auth = {"Authorization": f"Bearer {token}"}
+    max_results = max(1, min(max_results, 25))
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         resp = await client.get(
             "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"q": q, "maxResults": max_results},
+            headers=auth, params={"q": q, "maxResults": max_results},
         )
-    if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        ids = [m["id"] for m in resp.json().get("messages", [])]
+
+        async def detail(mid: str) -> dict:
+            r = await client.get(
+                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{mid}",
+                headers=auth,
+                params=[("format", "metadata"),
+                        ("metadataHeaders", "Subject"),
+                        ("metadataHeaders", "From"),
+                        ("metadataHeaders", "Date")],
+            )
+            if r.status_code >= 400:
+                return {"id": mid, "subject": "(erro ao ler)", "from": "", "date": "", "snippet": ""}
+            d = r.json()
+            hs = d.get("payload", {}).get("headers", [])
+            return {
+                "id": mid,
+                "subject": _header(hs, "Subject") or "(sem assunto)",
+                "from": _header(hs, "From"),
+                "date": _header(hs, "Date"),
+                "snippet": d.get("snippet", ""),
+                "link": f"https://mail.google.com/mail/u/0/#inbox/{mid}",
+            }
+
+        messages = await asyncio.gather(*(detail(i) for i in ids)) if ids else []
+    return {"messages": messages, "count": len(messages)}
 
 
 @router.get("/drive/files")
