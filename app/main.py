@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import agent, autonomous, connectors, google, health, mcp_client, research, scrape
+from .routers import agent, autonomous, connectors, google, health, mcp_client, research, scrape, video
 from .security import rate_limit, require_token
 
 app = FastAPI(title=settings.site_title, version="0.1.0")
@@ -32,6 +32,7 @@ app.include_router(agent.router, prefix="/api", tags=["agent"], dependencies=pro
 app.include_router(autonomous.router, prefix="/api", tags=["autonomous"], dependencies=protected)
 app.include_router(connectors.router, prefix="/api/connectors", tags=["connectors"], dependencies=protected)
 app.include_router(google.router, prefix="/api/connectors/google", tags=["google"], dependencies=protected)
+app.include_router(video.router, prefix="/api/video", tags=["video"], dependencies=protected)
 app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"], dependencies=protected)
 
 

@@ -48,9 +48,12 @@ produção, em vez de `*`.
 | `/api/deep-research` | POST `{topic}` | **Pesquisa profunda no servidor** com progresso via SSE: sub-perguntas → buscas → relatório com fontes |
 | `/api/agent` | POST `{messages}` | **Deep agent leve**: o modelo usa ferramentas (`web_search`, `fetch_url`) em várias rodadas até resolver |
 | `/api/autonomous` | POST `{task}` | **Agente autônomo avançado** com progresso via SSE: planeja → usa ferramentas (`web_search`, `fetch_url`, `notion_search`, `note`, `update_plan`) em várias rodadas, re-planeja sozinho, e entrega. Tetos de passos/tokens contra gasto infinito |
+| `/api/video/models` | GET | Lista modelos de vídeo disponíveis (Kling, Runway, Luma, Veo, Seedance, Hailuo, Wan) |
+| `/api/video/generate` | POST `{model, prompt, duration?}` | Inicia geração async de vídeo via Replicate. Retorna `prediction_id` pra polling |
+| `/api/video/prediction/{id}` | GET | Status/resultado da geração em progresso |
 
-A chave do OpenRouter vai no header **`X-OR-Key`** (a chave do usuário, vinda do
-navegador). O servidor não guarda chave nenhuma.
+A chave do OpenRouter vai no header **`X-OR-Key`**. A chave do Replicate vai em **`X-Replicate-Key`**.
+O servidor não guarda chave nenhuma — tudo vem do navegador do usuário.
 
 ### `/api/autonomous` — como funciona e limites honestos
 
@@ -78,7 +81,7 @@ Request: `{ "task": "...", "model": "openai/gpt-4.1", "max_steps": 12, "max_toke
 |---|---|---|
 | `/api/connectors/notion/search` | `NOTION_TOKEN` | Crie a integração em [notion.so/my-integrations](https://www.notion.so/my-integrations), cole o token no `.env`, compartilhe as páginas com a integração |
 | Figma / Google / Office | app OAuth de cada | Mesma estrutura do Notion — registrar app no provedor, guardar token, chamar a API |
-| Geração de vídeo | API paga (ex.: Runway, Kling) | Adicionar um router chamando a API do provedor |
+| `/api/video/*` | `REPLICATE_API_KEY` | Crie conta grátis em [replicate.com](https://replicate.com), gere uma API key. Uma chave única acessa todos os modelos: Kling AI, Runway Gen-3, Luma Dream Machine, Google Veo, Seedance, Hailuo, Wan, e upscalers |
 
 ---
 
@@ -180,9 +183,10 @@ app/
   main.py            # FastAPI + CORS + rotas
   config.py          # configuração via .env
   openrouter.py      # ponte com o chat do OpenRouter (chave do usuário no header)
+  replicate.py       # ponte com a API de geração do Replicate (chave do usuário no header)
   services.py        # scrape_url + web_search (reusados)
   routers/
-    health.py  scrape.py  research.py  agent.py  connectors.py
+    health.py  scrape.py  research.py  agent.py  autonomous.py  connectors.py  google.py  video.py
 ```
 
 ## Limites honestos
