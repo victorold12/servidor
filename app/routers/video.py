@@ -32,35 +32,35 @@ MODELS = {
         "id": "kling-ai/kling-v2",
         "name": "Kling AI v2.0",
         "type": "text-to-video",
-        "params": ["prompt", "duration"],
+        "params": ["prompt", "duration", "aspect_ratio"],
         "max_duration": 10,
     },
     "kling-v3": {
         "id": "kling-ai/kling-v3",
         "name": "Kling AI v3.0 (recomendado)",
         "type": "text-to-video",
-        "params": ["prompt", "duration"],
+        "params": ["prompt", "duration", "aspect_ratio"],
         "max_duration": 10,
     },
     "runway-gen3": {
         "id": "runwayml/gen-3-5-motion",
         "name": "Runway Gen-3.5 Motion",
         "type": "text-to-video",
-        "params": ["prompt", "duration"],
+        "params": ["prompt", "duration", "aspect_ratio"],
         "max_duration": 25,
     },
     "luma-dream": {
         "id": "luma-ai/photorealistic-world-model",
         "name": "Luma Dream Machine",
         "type": "text-to-video",
-        "params": ["prompt"],
+        "params": ["prompt", "aspect_ratio"],
         "max_duration": 5,
     },
     "veo-2": {
         "id": "google-deepmind/veo-2",
         "name": "Google Veo 2.0",
         "type": "text-to-video",
-        "params": ["prompt", "duration"],
+        "params": ["prompt", "duration", "aspect_ratio", "audio"],
         "max_duration": 6,
     },
     "seedance": {
@@ -74,7 +74,7 @@ MODELS = {
         "id": "hailuo/video-generation",
         "name": "Hailuo Video Generation",
         "type": "text-to-video",
-        "params": ["prompt", "duration"],
+        "params": ["prompt", "duration", "aspect_ratio"],
         "max_duration": 10,
     },
 }
@@ -86,6 +86,8 @@ class GenerateIn(BaseModel):
     prompt: str  # descrição do vídeo desejado
     duration: int | None = None  # em segundos (se aplicável)
     image_url: str | None = None  # pra image-to-video (Seedance)
+    aspect_ratio: str | None = None  # "16:9", "9:16", "1:1", etc. (se o modelo aceitar)
+    audio: bool | None = None  # gerar com áudio (se o modelo suportar)
 
 
 @router.get("/status")
@@ -146,6 +148,13 @@ async def generate(body: GenerateIn, x_replicate_key: str | None = Header(defaul
     # Image URL pra image-to-video
     if model_info["type"] == "image-to-video" and body.image_url:
         input_data["image"] = body.image_url
+
+    # Parâmetros opcionais — só repassa quando o modelo declara suporte.
+    # (Modelos que não aceitam esses campos ignorariam ou dariam erro no Replicate.)
+    if body.aspect_ratio and "aspect_ratio" in model_info.get("params", []):
+        input_data["aspect_ratio"] = body.aspect_ratio
+    if body.audio is not None and "audio" in model_info.get("params", []):
+        input_data["audio"] = body.audio
 
     try:
         result = await predict(model_info["id"], input_data, key=key)
