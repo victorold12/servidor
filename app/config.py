@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/api/connectors/google/callback"
+    replicate_api_key: str = ""
 
     request_timeout: float = 60.0
 
