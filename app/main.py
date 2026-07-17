@@ -3,6 +3,10 @@
 Sobe com:  uvicorn app.main:app --reload
 Docs interativas em /docs
 """
+import logging
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,7 +14,23 @@ from .config import settings
 from .routers import agent, autonomous, connectors, google, health, mcp_client, research, scrape, video
 from .security import rate_limit, require_token
 
-app = FastAPI(title=settings.site_title, version="0.1.0")
+logger = logging.getLogger("vtz_backend")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Render seta a env var RENDER=true automaticamente em todo deploy — é o
+    # sinal mais confiável de "isto não é a máquina local do dev".
+    if os.environ.get("RENDER") and not settings.backend_token:
+        logger.warning(
+            "BACKEND_TOKEN não configurado em produção (Render) — o backend "
+            "está aberto para qualquer um na internet usar. Configure "
+            "BACKEND_TOKEN em Environment no painel do Render."
+        )
+    yield
+
+
+app = FastAPI(title=settings.site_title, version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
