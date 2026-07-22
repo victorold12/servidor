@@ -1,0 +1,11 @@
+{
+  "name": "jarvis-agente-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente Local do JARVIS — cliente que executa ações no PC sob as 4 camadas de risco. Ver ../docs/SEGURANCA-AGENTE-LOCAL.md.",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test"
+  }
+}
