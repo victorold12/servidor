@@ -10,8 +10,9 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import db
 from .config import settings
-from .routers import agent, autonomous, connectors, google, health, mcp_client, research, scrape, video
+from .routers import agent, agents_hub, autonomous, connectors, google, health, mcp_client, pairing, research, scrape, video
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -19,6 +20,7 @@ logger = logging.getLogger("vtz_backend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    db.init_db()
     # Render seta a env var RENDER=true automaticamente em todo deploy — é o
     # sinal mais confiável de "isto não é a máquina local do dev".
     if os.environ.get("RENDER") and not settings.backend_token:
@@ -54,6 +56,18 @@ app.include_router(connectors.router, prefix="/api/connectors", tags=["connector
 app.include_router(google.router, prefix="/api/connectors/google", tags=["google"], dependencies=protected)
 app.include_router(video.router, prefix="/api/video", tags=["video"], dependencies=protected)
 app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"], dependencies=protected)
+
+# Pareamento do Agente Local: NÃO leva o `protected` genérico — /pair/start e
+# /pair/poll são chamados sem token (o agente ainda não tem nenhum); cada rota
+# do módulo declara sua própria auth (ver app/routers/pairing.py).
+app.include_router(pairing.router, prefix="/api", tags=["pairing"])
+
+# Hub WebSocket do Agente Local + gestão. Sem prefix aqui de propósito: o WS
+# fica em /ws/agent (Seção 12 do esquema — não /api/ws/agent) autenticado pelo
+# token do agente (Bearer), não pelo BACKEND_TOKEN; as rotas HTTP de gestão já
+# levam "/api" no próprio path e exigem sessão individualmente (ver
+# app/routers/agents_hub.py) — por isso também fora do `protected` genérico.
+app.include_router(agents_hub.router, tags=["agents"])
 
 
 @app.get("/")

@@ -3,7 +3,9 @@
 Protege o backend quando publicado na internet: sem isso, qualquer um que
 souber a URL pode usar (e gastar) os endpoints que fazem chamadas externas.
 """
+import hashlib
 import ipaddress
+import secrets
 import socket
 import time
 from collections import defaultdict
@@ -60,3 +62,43 @@ def assert_public_url(url: str):
         ip = ipaddress.ip_address(info[4][0])
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             raise HTTPException(status_code=400, detail="URL aponta pra rede interna — bloqueado por segurança.")
+
+
+# ---------------- Pareamento do Agente Local (docs/SEGURANCA-AGENTE-LOCAL.md) ----------------
+# Alfabeto sem caracteres ambíguos (sem 0/O, 1/I/L) — Seção 3: 8 chars ≈ 40 bits.
+_USER_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_user_code(length: int = 8) -> str:
+    """Código curto que a pessoa digita no site pra reivindicar o pareamento."""
+    return "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(length))
+
+
+def format_user_code(code: str) -> str:
+    """'WXYZ2345' -> 'WXYZ-2345', só pra exibição."""
+    return f"{code[:4]}-{code[4:]}" if len(code) == 8 else code
+
+
+def normalize_user_code(code: str) -> str:
+    """Remove espaço/hífen e uppercase, pra comparar o que a pessoa digitou."""
+    return code.strip().upper().replace("-", "").replace(" ", "")
+
+
+def generate_device_code() -> str:
+    """Segredo longo com que o Agente Local faz poll — nunca digitado por humano."""
+    return secrets.token_urlsafe(32)
+
+
+def generate_agent_token() -> str:
+    """Token opaco de 256 bits do agente pareado (Seção 4 — nunca JWT: revogar
+    é só apagar a linha, sem lista de bloqueio)."""
+    return secrets.token_urlsafe(32)
+
+
+def generate_agent_id() -> str:
+    return secrets.token_hex(8)
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 — o banco guarda só isto, nunca o token cru (Seção 4)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
