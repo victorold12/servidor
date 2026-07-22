@@ -6,6 +6,11 @@
   "type": "module",
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "pair": "node src/pair-cli.js",
+    "start": "node src/index.js"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   }
 }

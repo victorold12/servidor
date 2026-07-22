@@ -93,6 +93,14 @@ async def agent_ws(ws: WebSocket):
     token = auth[7:] if auth.lower().startswith("bearer ") else ws.query_params.get("token")
     agent_id = _authenticate_agent(token)
     if agent_id is None:
+        # ACEITA antes de fechar com o code — fechar pré-accept vira uma
+        # rejeição de handshake HTTP (sem 101), e a maioria dos clientes WS
+        # reais (inclusive o WebSocket nativo do Node) não expõe close.code
+        # nesse caso, só um "error" genérico. Isso quebrava o cliente do
+        # Agente Local: ele não conseguia distinguir "token inválido" (não
+        # adianta reconectar) de "backend fora do ar" (vale reconectar).
+        # Aceitar e fechar em seguida entrega o code 4401 de verdade.
+        await ws.accept()
         await ws.close(code=4401)  # não autorizado
         return
 

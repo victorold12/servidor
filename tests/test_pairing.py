@@ -88,11 +88,16 @@ def main():
         with client.websocket_connect(f"/ws/agent?token={agent_token}") as ws:
             ws.send_text('{"type":"heartbeat"}')
             check(True, "WS token válido conecta + heartbeat")
-        try:
-            with client.websocket_connect("/ws/agent?token=falso"):
-                check(False, "WS token falso NÃO deveria conectar")
-        except Exception:
-            check(True, "WS token falso recusado")
+        # Token inválido: ACEITA a conexão e só então fecha com code=4401 — de
+        # propósito (ver comentário em agents_hub.py). Fechar pré-accept vira
+        # rejeição de handshake HTTP sem code utilizável pra a maioria dos
+        # clientes WS reais (o WebSocket nativo do Node, por ex., só vê um
+        # "error" genérico) — o agente não conseguiria distinguir "token
+        # inválido" (não reconectar) de "backend fora do ar" (reconectar).
+        with client.websocket_connect("/ws/agent?token=falso") as ws:
+            msg = ws.receive()
+            check(msg.get("type") == "websocket.close" and msg.get("code") == 4401,
+                  f"WS token falso: aceita e fecha com code=4401 (veio: {msg})")
 
         print("== revogar ==")
         r = client.post(f"/api/agents/{agent_id}/revoke", headers=SESSION)

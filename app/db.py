@@ -5,12 +5,16 @@ Arquivo único, sem serviço externo — mesma filosofia do resto do backend (ze
 infraestrutura extra pra um usuário só). Migra pra Postgres quando precisar de
 multi-dispositivo de verdade; o esquema já é relacional simples de portar.
 """
+import os
 import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
-_DB_PATH = Path(__file__).resolve().parent.parent / "jarvis.db"
+# JARVIS_DB_PATH permite apontar pra um banco isolado (ex.: teste de integração
+# do Agente Local, que sobe este backend de verdade num processo separado e não
+# pode tocar no jarvis.db real). Sem a env var, é o arquivo de sempre.
+_DB_PATH = Path(os.environ.get("JARVIS_DB_PATH") or (Path(__file__).resolve().parent.parent / "jarvis.db"))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS paired_agents (
