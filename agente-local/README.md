@@ -41,25 +41,22 @@ tem bandeja).
 | Arquivo | Papel | Como é testado |
 |---|---|---|
 | `src/tier-validator.js` | **Núcleo de segurança.** Classifica caminho (sandbox + canonicaliza `..`/symlink + denylist de segredo) e comando (allowlist Tier 1 / blocklist Tier 3 / shell → Tier 2). Parse sem shell. | Puro — traversal, symlink escape, injeção `&&`/pipe/backtick/`$()`, `curl\|bash`, fork bomb. |
-| `src/safe-exec.js` | Gate das 4 camadas + execução real com `execFile` (shell:false). | Puro — Tier 3 nunca executa nem pergunta; Tier 2 sem `confirmFn` nega (fail-safe). |
+| `src/safe-exec.js` | Gate das 4 camadas (`applyGate`, compartilhado) + `runCommand` (execFile, shell:false) e `runFileOp` (fs estruturado via `classifyPath`: read/list/write/mkdir/delete). Cache de sessão "sempre permitir" (Tier 2) com chave por ação EXATA. | Puro — Tier 3 nunca executa nem pergunta; Tier 2 sem `confirmFn` nega; fs sandbox (traversal/símbolo/segredo); apagar pasta sobe pra Tier 2; cache não vaza entre ações nem libera Tier 3. |
 | `src/token-vault.js` | Token do agente no cofre do SO (`keytar`) — Windows Credential Manager / macOS Keychain / libsecret. **Nunca** cai pra arquivo texto se o cofre faltar: rejeita alto e claro. | A propriedade "nunca grava plaintext" é testável até aqui, sem keytar de verdade. |
 | `src/pairing.js` | Cliente RFC 8628: `start` → poll → trata `pending`/`approved`/`denied`/`expired`/HTTP 429. | **Integração real** — sobe o backend Python de verdade num banco temporário. |
 | `src/ws-client.js` | Conecta `/ws/agent` (token por query, não header — limitação do WebSocket padrão), reconecta com backoff+jitter, para em `code=4401` (não autorizado), heartbeat, despacha `command`→`result`. | Unit puro (WebSocket falso + timers mockados) **e** integração real (comando ida-e-volta pelo hub de verdade). |
 | `src/confirm.js` | Janela nativa de confirmação (Seção 7) — macOS via `osascript`, Windows via PowerShell/WinForms, Linux via `zenity`. Fail-safe: qualquer erro/cancelamento/ferramenta ausente = `"deny"`. | Mensagem e parsing são puros e testados. **A chamada real ao SO não roda neste ambiente** (sem display, sem os três binários) — precisa de smoke test manual em cada plataforma alvo antes de produção. |
 | `src/audit.js` | Escrita dupla (Seção 10): local (JSONL) sempre, hub quando dá. | Puro — inclusive o caso "hub fora do ar não perde o registro local". |
-| `src/command-dispatcher.js` | Traduz `{type:"command"}` do hub numa chamada ao `safe-exec` + audita. Só a ação `"run"` está ligada por ora (cobre leitura/escrita/organização via allowlist de comando). | Puro, com fakes de `confirmFn`/`sendAudit`. |
+| `src/command-dispatcher.js` | Traduz `{type:"command"}` do hub numa chamada ao `safe-exec` + audita. Roteia `"run"`→`runCommand` e `fs_read`/`fs_list`/`fs_write`/`fs_mkdir`/`fs_delete`→`runFileOp`. Dono do `alwaysCache` por sessão. | Puro, com fakes de `confirmFn`/`sendAudit` — inclui ida-e-volta de `fs_write`/`fs_read`. |
 | `src/pair-cli.js` / `src/index.js` | Fiação final: `npm run pair` e `npm start`. | **Integração real** — roda o CLI como processo filho contra o backend real; confirma que o fluxo chega até `saveToken()` e falha exatamente ali (não antes, não com crash) neste ambiente sem cofre de SO. |
 
 ## O que falta (fora do escopo aqui)
 
-- **Ações de arquivo estruturadas** (`fs_read`/`fs_write`/`fs_list` via `classifyPath`
-  direto, sem passar por shell) — hoje cobertas indiretamente pela ação `"run"`
-  com comandos da allowlist (`ls`/`cat`/`mkdir`/`copy`/`move`). `classifyPath` já
-  existe e é testado; falta só o segundo verbo de ação no dispatcher.
 - **UI de configuração** pra liberar itens de Tier 3 (`isUnlocked`) e editar
   `allowed_roots` fora do que o `policy_update` do hub manda.
-- **Frontend** (`VTz-painel`): tela "Parear dispositivo", painel de agentes,
-  detecção de capacidade — consome os endpoints já prontos no backend.
+- **Confirmação nativa rodando como serviço do Windows** — em Session 0 não há
+  desktop, então `JARVIS_SERVICE_MODE=1` nega Tier 2 automaticamente (ver a
+  seção "Rodar como serviço do Windows" acima).
 
 ## Por que alguns testes sobem um servidor Python de verdade
 

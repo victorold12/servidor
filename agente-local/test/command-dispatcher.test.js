@@ -95,3 +95,43 @@ test("getAllowedRoots é consultado a cada chamada (reflete policy_update em run
   // getAllowedRoots() é chamada de novo e não fica presa a um valor antigo.
   assert.equal(readLocalAudit(10, f).length, 2);
 });
+
+test("ação fs_write dentro da root escreve e audita (ida-e-volta pelo dispatcher)", async () => {
+  const f = tmpAuditFile();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-disp-root-"));
+  const sent = [];
+  const handler = createCommandHandler({
+    getAllowedRoots: () => [root],
+    confirmFn: async () => "deny",
+    sendAudit: (e) => sent.push(e),
+    auditFilePath: f,
+  });
+  const target = path.join(root, "criado.txt");
+  const result = await handler({
+    action: "fs_write",
+    args: { path: target, content: "via dispatcher" },
+    chat_id: "c1",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(fs.readFileSync(target, "utf8"), "via dispatcher");
+  const local = readLocalAudit(10, f);
+  assert.equal(local.length, 1);
+  assert.equal(local[0].action_type, "fs_write");
+  assert.equal(local[0].chat_id, "c1");
+  assert.equal(sent.length, 1, "também mandou pro hub");
+});
+
+test("ação fs_read fora das roots sem confirmFn é negada e auditada", async () => {
+  const f = tmpAuditFile();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-disp-root2-"));
+  const handler = createCommandHandler({
+    getAllowedRoots: () => [root],
+    confirmFn: null,
+    auditFilePath: f,
+  });
+  const result = await handler({ action: "fs_read", args: { path: "/etc/hostname" } });
+  assert.equal(result.ok, false);
+  const local = readLocalAudit(10, f);
+  assert.equal(local.length, 1);
+  assert.equal(local[0].tier, 2);
+});
