@@ -58,6 +58,17 @@ function closeSplash() {
   splash = null;
 }
 
+/**
+ * Tela preta e silenciosa é o pior resultado possível: usuário sem pista
+ * nenhuma do que aconteceu. index.html carrega bibliotecas de CDN externas
+ * (marked, DOMPurify, Firebase etc.) antes do app.js — se a rede do Windows
+ * bloquear/travar alguma delas (firewall, antivírus, proxy corporativo), a
+ * página pode nunca terminar de carregar. `loadFile` sozinho não avisa disso.
+ * Por isso: (1) trata falha de load de verdade, (2) força a janela aparecer
+ * mesmo se o carregamento nunca terminar, com uma mensagem clara em vez de
+ * ficar preso atrás do splash pra sempre, (3) log de console do renderer vai
+ * pro terminal (útil rodando via `npm start`; no .msi some, mas não piora nada).
+ */
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -74,11 +85,58 @@ function createMainWindow() {
       sandbox: true,
     },
   });
-  mainWindow.loadFile(webappPath("index.html"));
-  mainWindow.once("ready-to-show", () => {
+
+  let shown = false;
+  const showOnce = () => {
+    if (shown) return;
+    shown = true;
     closeSplash();
-    mainWindow.show();
+    if (!mainWindow.isDestroyed()) mainWindow.show();
+  };
+
+  mainWindow.loadFile(webappPath("index.html")).catch((err) => {
+    dialog.showErrorBox(
+      "Falha ao abrir o painel",
+      `Não consegui carregar a interface do JARVIS.\n\n${err.message}\n\n` +
+        "Verifique sua conexão com a internet (o painel carrega bibliotecas externas) e tente reabrir o app."
+    );
+    showOnce(); // mostra mesmo assim — melhor uma janela com erro visível que nada
   });
+
+  mainWindow.webContents.on("did-fail-load", (_evt, errorCode, errorDescription, validatedUrl) => {
+    if (errorCode === -3) return; // ERR_ABORTED: navegação cancelada por redirecionamento normal, não é falha real
+    dialog.showErrorBox(
+      "Falha ao carregar o painel",
+      `${errorDescription} (código ${errorCode})\nURL: ${validatedUrl}\n\n` +
+        "Verifique sua conexão com a internet e tente reabrir o app."
+    );
+    showOnce();
+  });
+
+  // Rede de segurança: se a página não terminar de carregar em 15s (CDN travada,
+  // sem internet), mostra a janela mesmo assim em vez de ficar preso atrás do
+  // splash pra sempre — o usuário pelo menos VÊ que algo está errado.
+  const stuckTimer = setTimeout(() => {
+    if (!shown) {
+      dialog.showErrorBox(
+        "O painel está demorando demais pra carregar",
+        "Isso costuma ser falta de internet ou alguma biblioteca externa bloqueada " +
+          "(firewall/antivírus). O app vai abrir mesmo assim, mas pode aparecer incompleto."
+      );
+      showOnce();
+    }
+  }, 15_000);
+
+  mainWindow.webContents.once("did-finish-load", () => clearTimeout(stuckTimer));
+  mainWindow.once("ready-to-show", () => {
+    clearTimeout(stuckTimer);
+    showOnce();
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_evt, details) => {
+    dialog.showErrorBox("O painel travou", `Motivo: ${details.reason}. Tente reabrir o app.`);
+  });
+
   // Fechar a janela minimiza pra bandeja — não derruba o agente. Só "Sair" no
   // menu da bandeja (ou Cmd+Q) encerra de verdade.
   mainWindow.on("close", (e) => {
