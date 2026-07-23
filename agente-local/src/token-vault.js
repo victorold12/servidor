@@ -13,10 +13,14 @@ const SERVICE = "jarvis-agente-local";
 const ACCOUNT = "agent-token";
 
 let _keytarPromise = null;
+// Injetável só pra teste — a propriedade "sem cofre disponível, falha alto"
+// precisa ser verificável em QUALQUER plataforma, não só nesta que por acaso
+// não tem libsecret. Em produção é sempre `() => import("keytar")` de verdade.
+let _importKeytar = () => import("keytar");
 
 function loadKeytar() {
   if (!_keytarPromise) {
-    _keytarPromise = import("keytar").catch((err) => {
+    _keytarPromise = _importKeytar().catch((err) => {
       _keytarPromise = null; // permite tentar de novo numa próxima chamada
       throw new Error(
         "Cofre de credenciais do SO indisponível (keytar não carregou). O token " +
@@ -33,6 +37,14 @@ function loadKeytar() {
 
 /** Só pra teste: força a próxima chamada a recarregar o módulo `keytar`. */
 export function _resetForTest() {
+  _keytarPromise = null;
+}
+
+/** Só pra teste: troca o loader do keytar (ex.: forçar falha determinística
+ * mesmo numa máquina onde o keytar de verdade funcionaria). `null` restaura o
+ * import real. */
+export function _setImportForTest(fn) {
+  _importKeytar = fn || (() => import("keytar"));
   _keytarPromise = null;
 }
 

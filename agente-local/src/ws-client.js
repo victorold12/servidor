@@ -37,8 +37,19 @@ export function createAgentConnection({
   onCommand,
   onEvent = () => {},
   heartbeatMs = 25_000,
-  WebSocketImpl = WebSocket,
+  WebSocketImpl,
 }) {
+  // Não usa `WebSocketImpl = WebSocket` no default do parâmetro: se o global
+  // não existir, isso levantaria um ReferenceError críptico na hora de montar
+  // os argumentos, antes até de entrar na função. Resolve aqui pra poder dar
+  // um erro que diz o que fazer (Node 22+ tem WebSocket nativo; versões
+  // anteriores não garantem isso).
+  WebSocketImpl = WebSocketImpl || (typeof WebSocket !== "undefined" ? WebSocket : null);
+  if (!WebSocketImpl) {
+    throw new Error(
+      `WebSocket global indisponível (Node ${process.version}). O Agente Local precisa do Node 22 ou mais novo — é de onde vem o cliente WebSocket nativo que ele usa.`
+    );
+  }
   const wsUrl = `${toWsUrl(backendUrl)}/ws/agent?token=${encodeURIComponent(token)}`;
   let ws = null;
   let stopped = false;

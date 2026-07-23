@@ -25,7 +25,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # >=22: o Agente Local usa o WebSocket global nativo do Node, que só
+          # é garantido a partir daqui (rodar com 20 quebra createAgentConnection
+          # com "WebSocket is not defined" — já bateu nisso uma vez de verdade).
+          node-version: 22
 
       - name: Setup Python
         uses: actions/setup-python@v5
