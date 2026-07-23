@@ -34,9 +34,26 @@ function webappPath(...segments) {
 
 let tray = null;
 let mainWindow = null;
+let pairingWindow = null;
 let splash = null;
 let wsConnection = null;
 let quitting = false;
+
+/** Traz de volta QUALQUER janela ativa no momento (principal ou de pareamento).
+ * Sem isto, clicar na bandeja durante o pareamento não fazia nada — se essa
+ * janela ficasse atrás de outra coisa (outro monitor, minimizada), o usuário
+ * via só o ícone na bandeja e achava que o app tinha travado (bug real, achado
+ * em teste no Windows: "fica só na bandeja, clico e não abre nada"). */
+function focusAnyWindow() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow
+    : pairingWindow && !pairingWindow.isDestroyed() ? pairingWindow
+    : null;
+  if (!win) return false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
 
 function createSplash() {
   splash = new BrowserWindow({
@@ -151,14 +168,20 @@ function createTray() {
   const tray_ = new Tray(nativeImage.createFromPath(TRAY_PNG));
   tray_.setToolTip("JARVIS — iniciando…");
   const menu = Menu.buildFromTemplate([
-    { label: "Mostrar JARVIS", click: () => mainWindow?.show() },
+    { label: "Mostrar JARVIS", click: () => focusAnyWindow() },
     { type: "separator" },
     { label: "Sair", click: () => { quitting = true; app.quit(); } },
   ]);
   tray_.setContextMenu(menu);
   tray_.on("click", () => {
-    if (!mainWindow) return;
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+    // Durante o pareamento (mainWindow ainda não existe), sempre traz a janela
+    // de pareamento pra frente — nunca esconde nada nessa fase. Só alterna
+    // mostrar/esconder quando a janela principal já existe.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.isVisible() && !mainWindow.isMinimized() ? mainWindow.hide() : focusAnyWindow();
+    } else {
+      focusAnyWindow();
+    }
   });
   tray = tray_;
 }
@@ -187,8 +210,18 @@ async function runPairingFlow() {
         nodeIntegration: false,
       },
     });
+    pairingWindow = win;
     win.setMenuBarVisibility(false);
-    win.loadFile(path.join(__dirname, "pairing.html"));
+    win.loadFile(path.join(__dirname, "pairing.html")).catch((err) => {
+      dialog.showErrorBox("Falha ao abrir o pareamento", err.message);
+    });
+    win.webContents.on("did-fail-load", (_evt, errorCode, errorDescription) => {
+      if (errorCode === -3) return; // ERR_ABORTED
+      dialog.showErrorBox("Falha ao abrir o pareamento", `${errorDescription} (código ${errorCode})`);
+    });
+    // Assim que a janela pinta o primeiro frame, garante que ela fica na frente
+    // — pareamento é sempre a primeira coisa que o usuário precisa ver/fazer.
+    win.once("ready-to-show", () => { win.show(); win.focus(); });
 
     ipcMain.handle("pairing:start", async (_evt, { backendUrl, name, platform }) => {
       try {
@@ -213,6 +246,7 @@ async function runPairingFlow() {
 
     win.on("closed", () => {
       ipcMain.removeHandler("pairing:start");
+      if (pairingWindow === win) pairingWindow = null;
       reject(new Error("Pareamento cancelado."));
     });
   });
@@ -247,29 +281,39 @@ async function connectAgent(cfg) {
   });
 }
 
-app.whenReady().then(async () => {
-  createSplash();
-  createTray();
-  try {
-    let cfg = null;
+// Trava de instância única: abrir o app de novo (ex.: clique duplo acidental no
+// atalho) só foca a janela existente em vez de subir um segundo processo com
+// seu próprio ícone de bandeja — dois processos concorrendo pela mesma conexão
+// WS/config é uma fonte clássica de "sumiu tudo, só ficou um ícone confuso".
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => { focusAnyWindow(); });
+
+  app.whenReady().then(async () => {
+    createSplash();
+    createTray();
     try {
-      cfg = await runPairingFlow();
-    } catch (err) {
-      dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO painel abre mesmo assim, mas ações no PC ficam indisponíveis até parear.`);
+      let cfg = null;
+      try {
+        cfg = await runPairingFlow();
+      } catch (err) {
+        dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO painel abre mesmo assim, mas ações no PC ficam indisponíveis até parear.`);
+      }
+      if (cfg) {
+        await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
+      }
+    } finally {
+      createMainWindow();
     }
-    if (cfg) {
-      await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
-    }
-  } finally {
-    createMainWindow();
-  }
-});
+  });
 
-app.on("before-quit", () => {
-  quitting = true;
-  wsConnection?.close();
-});
+  app.on("before-quit", () => {
+    quitting = true;
+    wsConnection?.close();
+  });
 
-// Sem "quit ao fechar a última janela" — o app fica vivo na bandeja
-// (é o ponto de ter Agente Local rodando mesmo com a janela fechada).
-app.on("window-all-closed", () => {});
+  // Sem "quit ao fechar a última janela" — o app fica vivo na bandeja
+  // (é o ponto de ter Agente Local rodando mesmo com a janela fechada).
+  app.on("window-all-closed", () => {});
+}

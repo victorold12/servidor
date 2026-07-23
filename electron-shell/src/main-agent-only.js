@@ -28,6 +28,7 @@ function agenteLocalModule(...segments) {
 
 let tray = null;
 let splash = null;
+let pairingWindow = null;
 let wsConnection = null;
 let lastStatusLabel = "iniciando…";
 let auditPath = null; // resolvido via config.js (auditLogPath()) — não é caminho fixo daqui
@@ -52,11 +53,25 @@ function closeSplash() {
   splash = null;
 }
 
+/** Traz a janela de pareamento de volta pra frente. Este app não tem janela
+ * principal (é headless por design — só bandeja), então se a janela de
+ * pareamento abrir atrás de algo e o usuário perder ela de vista, não havia
+ * ANTES nenhum jeito de recuperá-la pela bandeja — bug real, achado em teste
+ * no Windows ("fica só na bandeja, clico e não abre nada"). */
+function focusPairingWindow() {
+  if (!pairingWindow || pairingWindow.isDestroyed()) return false;
+  if (pairingWindow.isMinimized()) pairingWindow.restore();
+  pairingWindow.show();
+  pairingWindow.focus();
+  return true;
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
   const menu = Menu.buildFromTemplate([
     { label: `Status: ${lastStatusLabel}`, enabled: false },
     { type: "separator" },
+    { label: "Mostrar janela de pareamento", enabled: !!(pairingWindow && !pairingWindow.isDestroyed()), click: () => focusPairingWindow() },
     { label: "Ver auditoria local", enabled: !!auditPath, click: () => shell.showItemInFolder(auditPath) },
     { type: "separator" },
     { label: "Sair", click: () => app.quit() },
@@ -67,6 +82,7 @@ function rebuildTrayMenu() {
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(TRAY_PNG));
   tray.setToolTip("JARVIS Agente Local — iniciando…");
+  tray.on("click", () => focusPairingWindow());
   rebuildTrayMenu();
 }
 
@@ -90,8 +106,17 @@ async function runPairingFlow() {
         nodeIntegration: false,
       },
     });
+    pairingWindow = win;
+    rebuildTrayMenu();
     win.setMenuBarVisibility(false);
-    win.loadFile(path.join(__dirname, "pairing.html"));
+    win.loadFile(path.join(__dirname, "pairing.html")).catch((err) => {
+      dialog.showErrorBox("Falha ao abrir o pareamento", err.message);
+    });
+    win.webContents.on("did-fail-load", (_evt, errorCode, errorDescription) => {
+      if (errorCode === -3) return; // ERR_ABORTED
+      dialog.showErrorBox("Falha ao abrir o pareamento", `${errorDescription} (código ${errorCode})`);
+    });
+    win.once("ready-to-show", () => { win.show(); win.focus(); });
 
     ipcMain.handle("pairing:start", async (_evt, { backendUrl, name, platform }) => {
       try {
@@ -116,6 +141,8 @@ async function runPairingFlow() {
 
     win.on("closed", () => {
       ipcMain.removeHandler("pairing:start");
+      if (pairingWindow === win) pairingWindow = null;
+      rebuildTrayMenu();
       reject(new Error("Pareamento cancelado."));
     });
   });
@@ -149,33 +176,40 @@ async function connectAgent(cfg) {
   });
 }
 
-app.whenReady().then(async () => {
-  createSplash();
-  createTray();
-  try {
-    const { auditLogPath } = await import(agenteLocalModule("config.js"));
-    auditPath = auditLogPath();
-    rebuildTrayMenu();
-  } catch { /* ainda mostra a bandeja mesmo se isto falhar — item fica desabilitado */ }
-  try {
-    let cfg = null;
+// Trava de instância única — ver o comentário equivalente em main.js.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => { focusPairingWindow(); });
+
+  app.whenReady().then(async () => {
+    createSplash();
+    createTray();
     try {
-      cfg = await runPairingFlow();
-    } catch (err) {
-      dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO Agente Local fica na bandeja, mas sem conexão até você parear (clique no ícone da bandeja de novo pra tentar).`);
+      const { auditLogPath } = await import(agenteLocalModule("config.js"));
+      auditPath = auditLogPath();
+      rebuildTrayMenu();
+    } catch { /* ainda mostra a bandeja mesmo se isto falhar — item fica desabilitado */ }
+    try {
+      let cfg = null;
+      try {
+        cfg = await runPairingFlow();
+      } catch (err) {
+        dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO Agente Local fica na bandeja, mas sem conexão até você parear (clique no ícone da bandeja de novo pra tentar).`);
+      }
+      if (cfg) {
+        await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
+      }
+    } finally {
+      closeSplash();
     }
-    if (cfg) {
-      await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
-    }
-  } finally {
-    closeSplash();
-  }
-});
+  });
 
-app.on("before-quit", () => {
-  wsConnection?.close();
-});
+  app.on("before-quit", () => {
+    wsConnection?.close();
+  });
 
-// Sem janela nenhuma pra fechar — o app inteiro é a bandeja. Sair só pelo
-// menu da bandeja (ou Cmd+Q), nunca por "última janela fechada".
-app.on("window-all-closed", () => {});
+  // Sem janela nenhuma pra fechar — o app inteiro é a bandeja. Sair só pelo
+  // menu da bandeja (ou Cmd+Q), nunca por "última janela fechada".
+  app.on("window-all-closed", () => {});
+}
