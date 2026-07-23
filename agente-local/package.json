@@ -8,9 +8,12 @@
   "scripts": {
     "test": "node --test",
     "pair": "node src/pair-cli.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "install-service": "node scripts/install-windows-service.js",
+    "uninstall-service": "node scripts/uninstall-windows-service.js"
   },
   "optionalDependencies": {
-    "keytar": "^7.9.0"
+    "keytar": "^7.9.0",
+    "node-windows": "^1.0.0-beta.8"
   }
 }

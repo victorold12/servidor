@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "JARVIS Assistant",
+  "version": "0.1.0",
+  "description": "Controla o navegador para o JARVIS: pesquisa, extrai dados de página, preenche formulário. Fala direto com o backend do JARVIS (Seção 6 do esquema de arquitetura).",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "JARVIS Assistant",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "trigger-assistant": {
+      "suggested_key": { "default": "Ctrl+Shift+J" },
+      "description": "Abrir o JARVIS Assistant"
+    }
+  }
+}

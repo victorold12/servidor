@@ -28,7 +28,14 @@ async function main() {
   }
 
   let allowedRoots = cfg.allowedRoots || [];
-  const confirmFn = createNativeConfirm();
+  // Rodando como serviço do Windows (Session 0), não existe desktop pra mostrar
+  // o diálogo nativo de confirmação — ele nunca chegaria no usuário, só
+  // travaria ou falharia de um jeito imprevisível. Em vez disso, nega Tier 2
+  // direto (o mesmo fail-safe que já existe pra "sem confirmFn" em
+  // safe-exec.js): só Tier 0/1 rodam sozinhos como serviço; Tier 2 fica pra
+  // quando o Agente Local roda com o usuário logado (npm start / Electron
+  // tray). Ver scripts/install-windows-service.js.
+  const confirmFn = process.env.JARVIS_SERVICE_MODE === "1" ? async () => "deny" : createNativeConfirm();
 
   const conn = createAgentConnection({
     backendUrl: cfg.backendUrl,

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>JARVIS Assistant</title>
+<style>
+  :root{ color-scheme: dark; }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; width:360px; max-height:560px; overflow-y:auto;
+    background:#15131d; color:#e8e6f0;
+    font:13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header{
+    display:flex; align-items:center; gap:8px;
+    padding:12px 14px; border-bottom:1px solid #2a2735;
+  }
+  header .logo{
+    width:22px; height:22px; border-radius:6px;
+    background:linear-gradient(135deg,#8b5cf6,#5b3fc9);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:12px; color:#fff;
+  }
+  header h1{ font-size:14px; margin:0; font-weight:600; }
+  main{ padding:12px 14px; display:flex; flex-direction:column; gap:14px; }
+  section{ display:flex; flex-direction:column; gap:6px; }
+  section h2{
+    font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:#9992ac; margin:0 0 2px;
+  }
+  label{ font-size:11px; color:#b6b1c4; }
+  input, textarea{
+    width:100%; background:#1e1c28; border:1px solid #322f40; border-radius:6px;
+    color:#e8e6f0; padding:7px 9px; font:inherit;
+  }
+  input:focus, textarea:focus{ outline:none; border-color:#8b5cf6; }
+  button{
+    background:#8b5cf6; color:#fff; border:none; border-radius:6px;
+    padding:8px 10px; font:inherit; font-weight:600; cursor:pointer;
+  }
+  button:hover{ background:#7c4ce0; }
+  button.secondary{ background:#2a2735; color:#e8e6f0; }
+  button.secondary:hover{ background:#332f42; }
+  .row{ display:flex; gap:6px; }
+  .row > *{ flex:1; }
+  .hint{ font-size:11px; color:#78728a; }
+  .result{
+    background:#1e1c28; border:1px solid #322f40; border-radius:6px;
+    padding:8px 9px; max-height:180px; overflow-y:auto; white-space:pre-wrap;
+    font-size:12px;
+  }
+  .search-item{ padding:6px 0; border-bottom:1px solid #2a2735; }
+  .search-item:last-child{ border-bottom:none; }
+  .search-item a{ color:#a78bfa; text-decoration:none; font-weight:600; }
+  .search-item a:hover{ text-decoration:underline; }
+  .search-item .snippet{ color:#b6b1c4; font-size:11.5px; }
+  .status{ font-size:11px; min-height:14px; }
+  .status.ok{ color:#4fd1c5; }
+  .status.err{ color:#f87171; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">J</div>
+  <h1>JARVIS Assistant</h1>
+</header>
+<main>
+  <section>
+    <h2>Backend</h2>
+    <input id="backend-url" placeholder="https://vtz-backend.onrender.com">
+    <input id="backend-token" type="password" placeholder="Token de acesso (opcional)">
+    <button class="secondary" id="save-backend">Salvar backend</button>
+    <div class="status" id="backend-status"></div>
+  </section>
+
+  <section>
+    <h2>Ação na página</h2>
+    <div class="row">
+      <button id="btn-extract">Extrair página</button>
+      <button class="secondary" id="btn-selection">Pegar seleção</button>
+    </div>
+    <div class="result" id="page-result" style="display:none"></div>
+  </section>
+
+  <section>
+    <h2>Pesquisar</h2>
+    <div class="row">
+      <input id="search-q" placeholder="O que pesquisar...">
+      <button id="btn-search">Ir</button>
+    </div>
+    <div class="status" id="search-status"></div>
+    <div id="search-results"></div>
+  </section>
+
+  <section>
+    <h2>Preencher formulário</h2>
+    <label>Nome</label>
+    <input id="profile-name">
+    <label>Email</label>
+    <input id="profile-email">
+    <label>Telefone</label>
+    <input id="profile-phone">
+    <button class="secondary" id="btn-fill">Preencher nesta página</button>
+    <div class="status" id="fill-status"></div>
+  </section>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

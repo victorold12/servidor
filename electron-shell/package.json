@@ -9,7 +9,8 @@
     "prepare-webapp": "node scripts/prepare-webapp.js",
     "rebuild-agente-local": "node scripts/rebuild-agente-local.js",
     "start": "npm run prepare-webapp && electron .",
-    "dist:win": "npm run prepare-webapp && npm run rebuild-agente-local && electron-builder --win --x64 --config electron-builder.config.js"
+    "dist:win": "npm run prepare-webapp && npm run rebuild-agente-local && electron-builder --win --x64 --config electron-builder.config.js",
+    "dist:win:agent-only": "npm run rebuild-agente-local && electron-builder --win --x64 --config electron-builder.agent-only.config.js"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",

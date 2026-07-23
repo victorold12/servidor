@@ -8,12 +8,33 @@ WebSocket do backend e mantém a conexão. A fonte da verdade das regras é
 ## Uso
 
 ```bash
-npm install      # keytar é optionalDependency — se o build nativo falhar
-                  # (falta libsecret no Linux, por ex.), o resto instala normal
+npm install      # keytar e node-windows são optionalDependencies — se o build
+                  # nativo do keytar falhar (falta libsecret no Linux, por
+                  # ex.), o resto instala normal
 npm run pair      # fluxo de pareamento no terminal (mostra o user_code)
 npm start         # conecta no hub e fica rodando
-npm test          # 71 testes (node --test, sem framework externo)
+npm test          # 73 testes (node --test, sem framework externo)
 ```
+
+### Rodar como serviço do Windows (opcional)
+
+```bash
+npm run install-service     # exige terminal como Administrador; já deve ter pareado antes
+npm run uninstall-service
+```
+
+Registra o Agente Local pra iniciar sozinho no boot, sem precisar de login
+manual (Seção 10 do prompt mestre). Usa `node-windows` por baixo.
+
+**Limitação honesta**: um serviço do Windows roda em Session 0, sem desktop
+interativo — o diálogo nativo de confirmação (Tier 2, `confirm.js`) não tem
+como aparecer pro usuário. Rodando como serviço, `src/index.js` detecta
+`JARVIS_SERVICE_MODE=1` e nega Tier 2 automaticamente (mesmo fail-safe de
+"sem canal de confirmação" que já existe em `safe-exec.js`) em vez de tentar
+mostrar um diálogo que nunca chegaria em lugar nenhum. Só Tier 0/1 (leitura e
+escrita na allowlist) funcionam sozinhos como serviço; pra Tier 2 funcionar,
+rode com `npm start` normal (usuário logado) ou o instalador Electron (que
+tem bandeja).
 
 ## Estado atual — tudo implementado e testado
 

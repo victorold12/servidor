@@ -62,13 +62,26 @@ jobs:
         working-directory: servidor/electron-shell
         run: npm install
 
-      - name: Builda o .msi
+      - name: Builda o .msi (JARVIS Completo)
         working-directory: servidor/electron-shell
         run: npm run dist:win
 
-      - name: Sobe o .msi como artifact
+      - name: Sobe o .msi (Completo) como artifact
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-installer
           path: servidor/electron-shell/dist/*.msi
+          if-no-files-found: error
+
+      # Segundo instalador (Seção 10): só o Agente Local, sem a Web App
+      # embutida — não depende do checkout do VTz-painel nem do build dele.
+      - name: Builda o .msi (JARVIS Agente Local)
+        working-directory: servidor/electron-shell
+        run: npm run dist:win:agent-only
+
+      - name: Sobe o .msi (Agente Local) como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-agente-local-installer
+          path: servidor/electron-shell/dist-agent-only/*.msi
           if-no-files-found: error
