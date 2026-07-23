@@ -51,7 +51,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
     decision     TEXT NOT NULL,
     result       TEXT NOT NULL,
     chat_id      TEXT,
-    message_id   TEXT
+    message_id   TEXT,
+    -- Cadeia de hash (Seção 13.1, absorvido do JarvisAI): cada linha guarda o
+    -- hash da anterior; adulterar/reordenar/apagar no meio quebra verify_chain().
+    prev_hash    TEXT,
+    hash         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
@@ -87,6 +91,17 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn):
+    """Migrações idempotentes pra bancos que já existem (o CREATE ... IF NOT
+    EXISTS não adiciona colunas novas a uma tabela antiga)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(audit_log)")}
+    if "prev_hash" not in cols:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN prev_hash TEXT")
+    if "hash" not in cols:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT")
 
 
 def now() -> float:

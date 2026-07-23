@@ -6,6 +6,7 @@ sempre do agente, na máquina do usuário — este arquivo nunca autoriza nada
 perigoso, só encaminha.
 """
 import asyncio
+import hashlib
 import json
 import time
 
@@ -16,6 +17,50 @@ from .. import db
 from ..security import hash_token, require_token
 
 router = APIRouter()
+
+# Genesis da cadeia de hash da auditoria (Seção 13.1). A primeira linha aponta
+# pra isto; daí em diante cada linha aponta pro hash da anterior.
+_AUDIT_GENESIS = "0" * 64
+
+# Campos que entram no hash, em ordem fixa. Mudar esta lista/ordem invalida a
+# verificação de logs antigos — só mexer com migração pensada.
+_AUDIT_FIELDS = ("agent_id", "ts", "action_type", "target", "tier", "decision", "result", "chat_id", "message_id")
+
+
+def _canonical_audit(rec: dict) -> str:
+    """Serialização determinística (chaves ordenadas, sem espaço) do registro +
+    prev_hash. É o que vira o SHA-256 — precisa ser idêntica na escrita e na
+    verificação, então nada de depender de ordem de dict ou de float variável."""
+    payload = {k: rec.get(k) for k in _AUDIT_FIELDS}
+    payload["prev_hash"] = rec.get("prev_hash")
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _audit_hash(rec: dict) -> str:
+    return hashlib.sha256(_canonical_audit(rec).encode("utf-8")).hexdigest()
+
+
+def verify_audit_chain(conn) -> dict:
+    """Percorre TODA a audit_log em ordem de id e confere a cadeia. Linhas
+    antigas (pré-migração, hash NULL) formam um prefixo não-encadeado: são
+    puladas e a cadeia real começa da primeira linha com hash (que foi escrita
+    apontando pro genesis, já que a linha anterior tinha hash NULL). Qualquer
+    adulteração/reordenação/remoção no trecho encadeado quebra a verificação."""
+    rows = conn.execute("SELECT * FROM audit_log ORDER BY id ASC").fetchall()
+    prev = _AUDIT_GENESIS
+    legacy = 0
+    chained = 0
+    for r in rows:
+        if r["hash"] is None:
+            legacy += 1
+            continue
+        rec = {k: r[k] for k in _AUDIT_FIELDS}
+        rec["prev_hash"] = r["prev_hash"]
+        if r["prev_hash"] != prev or r["hash"] != _audit_hash(rec):
+            return {"ok": False, "count": len(rows), "chained": chained, "legacy": legacy, "broken_at": r["id"]}
+        prev = r["hash"]
+        chained += 1
+    return {"ok": True, "count": len(rows), "chained": chained, "legacy": legacy}
 
 
 class _Hub:
@@ -71,17 +116,29 @@ def _authenticate_agent(token: str | None) -> str | None:
 
 def _write_audit(agent_id: str, msg: dict):
     with db.get_conn() as conn:
+        # prev_hash = hash da última linha (por id). WAL serializa escritas, e o
+        # SELECT+INSERT rodam na mesma conexão/transação — pro caso de 1 usuário
+        # com 1 agente (o alvo deste projeto) a janela de corrida é desprezível.
+        last = conn.execute("SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
+        prev_hash = last["hash"] if last and last["hash"] else _AUDIT_GENESIS
+        rec = {
+            "agent_id": agent_id,
+            "ts": time.time(),
+            "action_type": str(msg.get("action_type", ""))[:40],
+            "target": str(msg.get("target", ""))[:500],
+            "tier": int(msg.get("tier", 0)),
+            "decision": str(msg.get("decision", ""))[:20],
+            "result": str(msg.get("result", ""))[:500],
+            "chat_id": msg.get("chat_id"),
+            "message_id": msg.get("message_id"),
+            "prev_hash": prev_hash,
+        }
+        rec["hash"] = _audit_hash(rec)
         conn.execute(
             "INSERT INTO audit_log "
-            "(agent_id, ts, action_type, target, tier, decision, result, chat_id, message_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                agent_id, time.time(),
-                str(msg.get("action_type", ""))[:40], str(msg.get("target", ""))[:500],
-                int(msg.get("tier", 0)), str(msg.get("decision", ""))[:20],
-                str(msg.get("result", ""))[:500],
-                msg.get("chat_id"), msg.get("message_id"),
-            ),
+            "(agent_id, ts, action_type, target, tier, decision, result, chat_id, message_id, prev_hash, hash) "
+            "VALUES (:agent_id, :ts, :action_type, :target, :tier, :decision, :result, :chat_id, :message_id, :prev_hash, :hash)",
+            rec,
         )
 
 
@@ -230,6 +287,16 @@ def get_audit(limit: int = 100, agent_id: str | None = None):
         else:
             rows = conn.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
     return {"entries": [dict(r) for r in rows]}
+
+
+@router.get("/api/audit/verify", dependencies=[Depends(require_token)])
+def audit_verify():
+    """Confere a cadeia de hash de TODA a auditoria (Seção 13.1). Global de
+    propósito — a cadeia cruza agentes na ordem de escrita; filtrar por agente
+    quebraria a continuidade. Devolve o id da primeira linha adulterada, se
+    houver."""
+    with db.get_conn() as conn:
+        return verify_audit_chain(conn)
 
 
 class PolicyIn(BaseModel):
