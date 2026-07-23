@@ -86,14 +86,23 @@ async def _rpc(server_url: str, extra_headers: dict | None, method: str, params:
         return obj.get("result")
 
 
+# Helpers reutilizáveis (o deep-agent em routers/agent.py usa estes pra tornar
+# ferramentas MCP em ferramentas nativas do agente — Seção 13.1, MCP nativo).
+async def mcp_list_tools(server_url: str, headers: dict | None = None) -> dict:
+    return await _rpc(server_url, headers, "tools/list", {}, 2)
+
+
+async def mcp_call_tool(server_url: str, tool: str, arguments: dict, headers: dict | None = None) -> dict:
+    return await _rpc(server_url, headers, "tools/call", {"name": tool, "arguments": arguments}, 3)
+
+
 @router.post("/tools")
 async def mcp_tools(body: ToolsIn):
     """Lista as ferramentas expostas por um servidor MCP."""
-    return await _rpc(body.server_url, body.headers, "tools/list", {}, 2)
+    return await mcp_list_tools(body.server_url, body.headers)
 
 
 @router.post("/call")
 async def mcp_call(body: CallIn):
     """Chama uma ferramenta de um servidor MCP."""
-    return await _rpc(body.server_url, body.headers, "tools/call",
-                      {"name": body.tool, "arguments": body.arguments}, 3)
+    return await mcp_call_tool(body.server_url, body.tool, body.arguments, body.headers)

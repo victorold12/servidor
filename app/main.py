@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import settings
-from .routers import agent, agents_hub, autonomous, connectors, google, health, mcp_client, memory, pairing, research, scrape, video
+from .routers import agent, agents_hub, autonomous, connectors, google, health, mcp_client, memory, orchestrate, pairing, research, scrape, video
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -52,6 +52,7 @@ app.include_router(scrape.router, prefix="/api", tags=["scrape"], dependencies=p
 app.include_router(research.router, prefix="/api", tags=["research"], dependencies=protected)
 app.include_router(agent.router, prefix="/api", tags=["agent"], dependencies=protected)
 app.include_router(autonomous.router, prefix="/api", tags=["autonomous"], dependencies=protected)
+app.include_router(orchestrate.router, prefix="/api", tags=["orchestrate"], dependencies=protected)
 app.include_router(connectors.router, prefix="/api/connectors", tags=["connectors"], dependencies=protected)
 app.include_router(google.router, prefix="/api/connectors/google", tags=["google"], dependencies=protected)
 app.include_router(video.router, prefix="/api/video", tags=["video"], dependencies=protected)
