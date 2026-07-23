@@ -10,8 +10,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
+// fileURLToPath, não new URL(...).pathname: no Windows o pathname de uma URL
+// de arquivo vem como "/D:/a/..." (barra antes da letra de unidade) — path.dirname
+// nisso produz um caminho inválido tipo "D:\D:\a\..." quando resolvido depois.
+// Já era feito certo em src/main.js; faltava aqui (achado rodando no CI Windows real).
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHELL_ROOT = path.resolve(HERE, "..");
 const DEST = path.join(SHELL_ROOT, "webapp");
 
