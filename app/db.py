@@ -58,8 +58,30 @@ CREATE TABLE IF NOT EXISTS audit_log (
     hash         TEXT
 );
 
+-- Grafo de memória de longo prazo (Seção 7): o BACKEND é a fonte única. App,
+-- extensão e desktop leem/escrevem aqui e mantêm só cache descartável — não
+-- existe "sincronizar duas verdades". Normalizado (nós + arestas) de propósito,
+-- pra portar pra Postgres/pgvector depois sem virar um blob opaco.
+CREATE TABLE IF NOT EXISTS memory_nodes (
+    user_id   TEXT NOT NULL DEFAULT 'victor',
+    node_id   TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    type      TEXT NOT NULL DEFAULT 'fato',
+    PRIMARY KEY (user_id, node_id)
+);
+
+CREATE TABLE IF NOT EXISTS memory_edges (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT NOT NULL DEFAULT 'victor',
+    source     TEXT NOT NULL,
+    relation   TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.9
+);
+
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_pending_user_code ON pending_pairings(user_code);
+CREATE INDEX IF NOT EXISTS idx_memory_edges_user ON memory_edges(user_id);
 """
 
 

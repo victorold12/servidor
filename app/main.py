@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import settings
-from .routers import agent, agents_hub, autonomous, connectors, google, health, mcp_client, pairing, research, scrape, video
+from .routers import agent, agents_hub, autonomous, connectors, google, health, mcp_client, memory, pairing, research, scrape, video
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -56,6 +56,7 @@ app.include_router(connectors.router, prefix="/api/connectors", tags=["connector
 app.include_router(google.router, prefix="/api/connectors/google", tags=["google"], dependencies=protected)
 app.include_router(video.router, prefix="/api/video", tags=["video"], dependencies=protected)
 app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"], dependencies=protected)
+app.include_router(memory.router, prefix="/api", tags=["memory"], dependencies=protected)
 
 # Pareamento do Agente Local: NÃO leva o `protected` genérico — /pair/start e
 # /pair/poll são chamados sem token (o agente ainda não tem nenhum); cada rota
