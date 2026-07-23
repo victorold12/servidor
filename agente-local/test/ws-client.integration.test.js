@@ -14,6 +14,7 @@ import path from "node:path";
 
 import { pairWithBackend } from "../src/pairing.js";
 import { createAgentConnection } from "../src/ws-client.js";
+import { PYTHON_BIN } from "./_python.js";
 
 const PORT = 8800;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -53,7 +54,7 @@ async function pairFreshAgent(name) {
 test("comando disparado pelo backend chega no cliente e a resposta volta pelo HTTP", async (t) => {
   const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
   const proc = spawn(
-    "python3",
+    PYTHON_BIN,
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(PORT)],
     { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
   );
@@ -99,7 +100,7 @@ test("revogar o agente enquanto conectado entrega 'revoked' pro cliente", async 
   const port = PORT + 1;
   const base = `http://127.0.0.1:${port}`;
   const proc = spawn(
-    "python3",
+    PYTHON_BIN,
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)],
     { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
   );

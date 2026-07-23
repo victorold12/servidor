@@ -1,13 +1,17 @@
 /**
  * Roda o pair-cli.js DE VERDADE (processo filho) contra o backend Python real,
  * confirmando pelo HTTP como o navegador faria. Prova a fiação completa:
- * prompt -> pairWithBackend -> mostra o código -> poll -> approved.
+ * prompt -> pairWithBackend -> mostra o código -> poll -> approved -> saveToken.
  *
- * Este ambiente não tem cofre de credenciais de SO (sem libsecret/D-Bus, sem
- * Windows/macOS) — então o teste espera exatamente onde ele DEVE falhar aqui:
- * em saveToken(), com a mensagem clara do token-vault, código de saída 1. Não
- * é um teste fraco "aceita qualquer erro" — verifica que é ESSE erro (cofre
- * indisponível), não um crash silencioso ou uma mensagem genérica.
+ * O desfecho de saveToken() depende do cofre do SO estar disponível — varia
+ * por ambiente:
+ *   - Aqui (Linux sem libsecret/D-Bus): keytar não builda -> falha ALTA e
+ *     CLARA (mensagem do token-vault), nunca crash silencioso.
+ *   - CI Windows real (keytar com binário pré-compilado, Credential Manager
+ *     disponível): pareamento deve completar de verdade.
+ * O teste aceita os dois desfechos, mas cada um com a asserção certa — não é
+ * "aceita qualquer coisa", é "aceita qualquer um dos dois comportamentos
+ * corretos conhecidos", nunca um terceiro (crash, timeout, mensagem genérica).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +19,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PYTHON_BIN } from "./_python.js";
 
 const PORT = 8802;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -34,10 +39,10 @@ async function waitForHealth() {
   throw new Error("backend não respondeu a tempo");
 }
 
-test("pair-cli.js: fluxo completo até o cofre do SO (que não existe neste ambiente) — falha alta e clara, não crash", async (t) => {
+test("pair-cli.js: fluxo completo até o cofre do SO — sucesso real OU falha alta e clara, nunca crash", async (t) => {
   const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
   const backendProc = spawn(
-    "python3",
+    PYTHON_BIN,
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(PORT)],
     { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
   );
@@ -74,10 +79,18 @@ test("pair-cli.js: fluxo completo até o cofre do SO (que não existe neste ambi
 
   assert.ok(confirmed, "o código apareceu no stdout e foi confirmado");
   assert.match(stdout, /Código: [A-Z0-9]{4}-[A-Z0-9]{4}/, "mostrou o código de pareamento");
-  // Chegou a ponto de ter um agent_token de verdade (senão não haveria o que
-  // salvar no cofre) — mas NÃO deve imprimir sucesso, porque falha antes disso.
-  assert.doesNotMatch(stdout, /Pareado com sucesso/);
-  assert.equal(exitCode, 1);
-  assert.match(stderr, /Falha no pareamento/);
-  assert.match(stderr, /cofre de credenciais/i, "erro é o do token-vault (esperado), não outra coisa");
+
+  if (exitCode === 0) {
+    // Cofre do SO disponível de verdade (ex.: Windows CI com Credential
+    // Manager) — o pareamento completa de ponta a ponta.
+    assert.match(stdout, /Pareado com sucesso/, "cofre disponível: deveria completar com sucesso");
+    assert.equal(stderr, "", "sucesso não deveria escrever nada em stderr");
+  } else {
+    // Cofre indisponível (aqui: Linux sem libsecret) — falha ALTA e CLARA,
+    // nunca um crash genérico ou silencioso.
+    assert.equal(exitCode, 1);
+    assert.doesNotMatch(stdout, /Pareado com sucesso/);
+    assert.match(stderr, /Falha no pareamento/);
+    assert.match(stderr, /cofre de credenciais/i, "erro é o do token-vault (esperado), não outra coisa");
+  }
 });

@@ -1,0 +1,19 @@
+{
+  "name": "jarvis-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Casca desktop do JARVIS — Web App + Agente Local numa janela nativa, com bandeja e splash. Ver ../docs/SEGURANCA-AGENTE-LOCAL.md e ../agente-local/README.md.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "prepare-webapp": "node scripts/prepare-webapp.js",
+    "rebuild-agente-local": "electron-rebuild --version $(node -p \"require('electron/package.json').version\") --module-dir ../agente-local --only keytar --force",
+    "start": "npm run prepare-webapp && electron .",
+    "dist:win": "npm run prepare-webapp && npm run rebuild-agente-local && electron-builder --win --x64 --config electron-builder.config.js"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

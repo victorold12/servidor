@@ -1,0 +1,71 @@
+name: Build JARVIS .msi
+
+# Manual de propósito: build em windows-latest custa minutos de CI de verdade,
+# e não faz sentido rodar em todo push. Aciona em Actions > Build JARVIS .msi
+# > Run workflow. (Pode trocar pra `push:` depois se quiser build automático.)
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-msi:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout servidor
+        uses: actions/checkout@v4
+        with:
+          path: servidor
+
+      - name: Checkout VTz-painel
+        uses: actions/checkout@v4
+        with:
+          repository: victorold12/VTz-painel
+          ref: claude/portuguese-language-dxcsjr
+          path: VTz-painel
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # --- Web App (repo irmão) ---
+      - name: Instala deps da Web App
+        working-directory: VTz-painel
+        run: npm install
+
+      - name: Builda a Web App (app.js/style.css)
+        working-directory: VTz-painel
+        run: npm run build
+
+      # --- Agente Local: instala, testa antes de empacotar ---
+      - name: Instala deps do Agente Local
+        working-directory: servidor/agente-local
+        run: npm install
+
+      - name: Instala deps Python do backend (pros testes de integração)
+        working-directory: servidor
+        run: pip install -r requirements.txt
+
+      - name: Roda os testes do Agente Local
+        working-directory: servidor/agente-local
+        run: npm test
+
+      # --- Electron shell: empacota ---
+      - name: Instala deps do Electron shell
+        working-directory: servidor/electron-shell
+        run: npm install
+
+      - name: Builda o .msi
+        working-directory: servidor/electron-shell
+        run: npm run dist:win
+
+      - name: Sobe o .msi como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-installer
+          path: servidor/electron-shell/dist/*.msi
+          if-no-files-found: error
