@@ -7,7 +7,7 @@
   "main": "src/main.js",
   "scripts": {
     "prepare-webapp": "node scripts/prepare-webapp.js",
-    "rebuild-agente-local": "electron-rebuild --version $(node -p \"require('electron/package.json').version\") --module-dir ../agente-local --only keytar --force",
+    "rebuild-agente-local": "node scripts/rebuild-agente-local.js",
     "start": "npm run prepare-webapp && electron .",
     "dist:win": "npm run prepare-webapp && npm run rebuild-agente-local && electron-builder --win --x64 --config electron-builder.config.js"
   },
