@@ -190,18 +190,22 @@ if (!app.requestSingleInstanceLock()) {
       auditPath = auditLogPath();
       rebuildTrayMenu();
     } catch { /* ainda mostra a bandeja mesmo se isto falhar — item fica desabilitado */ }
+
+    // Failsafe: a splash nunca fica pra sempre, mesmo que algo trave.
+    const splashFailsafe = setTimeout(() => closeSplash(), 12_000);
+
+    let cfg = null;
     try {
-      let cfg = null;
-      try {
-        cfg = await runPairingFlow();
-      } catch (err) {
-        dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO Agente Local fica na bandeja, mas sem conexão até você parear (clique no ícone da bandeja de novo pra tentar).`);
-      }
-      if (cfg) {
-        await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
-      }
-    } finally {
-      closeSplash();
+      cfg = await runPairingFlow();
+    } catch (err) {
+      dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO Agente Local fica na bandeja, mas sem conexão até você parear (clique no ícone da bandeja de novo pra tentar).`);
+    }
+
+    // Fecha a splash JÁ — não espera a conexão (que pode demorar). Conexão em 2º plano.
+    clearTimeout(splashFailsafe);
+    closeSplash();
+    if (cfg) {
+      connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
     }
   });
 

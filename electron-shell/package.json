@@ -1,6 +1,6 @@
 {
   "name": "jarvis-electron",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Casca desktop do JARVIS — Web App + Agente Local numa janela nativa, com bandeja e splash. Ver ../docs/SEGURANCA-AGENTE-LOCAL.md e ../agente-local/README.md.",
   "type": "module",

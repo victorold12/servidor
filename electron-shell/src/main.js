@@ -297,18 +297,31 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     createSplash();
     createTray();
+
+    // Failsafe absoluto: não importa o que trave no fluxo (pareamento, keytar,
+    // conexão), a splash NUNCA fica pra sempre. Se em 12s nada abriu o painel e
+    // não há janela de pareamento aberta esperando o usuário, abre assim mesmo.
+    const splashFailsafe = setTimeout(() => {
+      if (!mainWindow && !(pairingWindow && !pairingWindow.isDestroyed())) createMainWindow(null);
+    }, 12_000);
+
+    // cfg fica no escopo da função (NÃO dentro do try) — declarar com let dentro
+    // do try e usar depois dava ReferenceError e travava a abertura do painel
+    // (bug real da splash infinita, achado testando o .msi no Windows).
+    let cfg = null;
     try {
-      let cfg = null;
-      try {
-        cfg = await runPairingFlow();
-      } catch (err) {
-        dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO painel abre mesmo assim, mas ações no PC ficam indisponíveis até parear.`);
-      }
-      if (cfg) {
-        await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
-      }
-    } finally {
-      createMainWindow(cfg?.backendUrl || null);
+      cfg = await runPairingFlow();
+    } catch (err) {
+      dialog.showErrorBox("Pareamento não concluído", `${err.message}\n\nO painel abre mesmo assim, mas ações no PC ficam indisponíveis até parear.`);
+    }
+
+    // Abre o painel JÁ — sem esperar a conexão do agente. Se o backend estiver
+    // lento/fora do ar, connectAgent pode demorar, e isso não pode segurar a
+    // janela. A conexão roda em segundo plano.
+    clearTimeout(splashFailsafe);
+    if (!mainWindow) createMainWindow(cfg?.backendUrl || null);
+    if (cfg) {
+      connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
     }
   });
 
