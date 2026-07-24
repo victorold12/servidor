@@ -86,7 +86,10 @@ function closeSplash() {
  * ficar preso atrás do splash pra sempre, (3) log de console do renderer vai
  * pro terminal (útil rodando via `npm start`; no .msi some, mas não piora nada).
  */
-function createMainWindow() {
+function createMainWindow(pairedBackendUrl) {
+  // Passa a URL do backend pareado pro painel web via argumento do preload —
+  // é o que faz a aba "Agente Local" enxergar o agente que acabou de parear.
+  const extraArgs = pairedBackendUrl ? [`--jarvis-backend-url=${pairedBackendUrl}`] : [];
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -100,6 +103,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: extraArgs,
     },
   });
 
@@ -304,7 +308,7 @@ if (!app.requestSingleInstanceLock()) {
         await connectAgent(cfg).catch((err) => dialog.showErrorBox("Falha ao conectar o Agente Local", err.message));
       }
     } finally {
-      createMainWindow();
+      createMainWindow(cfg?.backendUrl || null);
     }
   });
 

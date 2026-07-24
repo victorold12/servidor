@@ -11,9 +11,20 @@
  */
 const { contextBridge } = require("electron");
 
+// URL do backend pareado, injetada pelo main.js via webPreferences.
+// additionalArguments (process.argv funciona mesmo no preload sandboxed).
+// Sem isto, o painel web dentro do Electron não sabia qual backend usar — só
+// tentava localhost:8000 — e a aba "Agente Local" ficava vazia mesmo com o
+// agente pareado e conectado (bug real, achado testando o .msi no Windows).
+function argValue(prefix) {
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length) : null;
+}
+
 // `process` aqui é o global do Node exposto pelo próprio preload (mesmo sob
 // sandbox) — não precisa (e não dá pra) importar do pacote "electron".
 contextBridge.exposeInMainWorld("jarvisDesktop", {
   isElectron: true,
   platform: process.platform,
+  backendUrl: argValue("--jarvis-backend-url="),
 });
