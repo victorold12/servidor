@@ -161,3 +161,43 @@ async def set_stt(agent_id: str, body: SttConfigIn):
     if not args:
         raise HTTPException(status_code=400, detail="Nada pra mudar.")
     return await _pede(agent_id, "stt_config_set", args)
+
+
+# =====================================================================
+# Escuta contínua ("Ei, JARVIS" sem clicar em nada — Seção 9)
+# =====================================================================
+class ListenConfigIn(BaseModel):
+    enabled: bool | None = None
+    recorder: str | None = None
+    device: str | None = None
+    chunkSec: float | None = None
+    pausaMs: float | None = None
+
+
+@router.get("/voice/{agent_id}/listen")
+async def listen_status(agent_id: str):
+    """Estado da escuta contínua naquele PC, incluindo o custo estimado.
+
+    O custo vai junto de propósito: ligar isto é ASR rodando sem parar, e quem
+    liga precisa ver a conta antes — não depois, no ventilador da máquina.
+    """
+    return await _pede(agent_id, "listen_status", timeout=20.0)
+
+
+@router.put("/voice/{agent_id}/listen")
+async def listen_config(agent_id: str, body: ListenConfigIn):
+    args = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not args:
+        raise HTTPException(status_code=400, detail="Nada pra mudar.")
+    return await _pede(agent_id, "listen_config_set", args)
+
+
+@router.post("/voice/{agent_id}/listen/start")
+async def listen_start(agent_id: str):
+    """Liga o loop. O agente recusa (com motivo) se faltar gravador ou modelo."""
+    return await _pede(agent_id, "listen_start", timeout=30.0)
+
+
+@router.post("/voice/{agent_id}/listen/stop")
+async def listen_stop(agent_id: str):
+    return await _pede(agent_id, "listen_stop", timeout=30.0)

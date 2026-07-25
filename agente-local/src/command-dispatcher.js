@@ -22,6 +22,10 @@ import {
   deleteVoiceSample, ENGINES, listVoiceSamples, loadVoiceConfig, RANGES,
   saveVoiceConfig, saveVoiceSample,
 } from "./voice-config.js";
+import {
+  checkSetup as checkListener, createListener, LIMITES as LISTENER_LIMITES,
+  loadConfig as loadListenerConfig, RECORDERS, saveConfig as saveListenerConfig,
+} from "./listener.js";
 
 const FS_ACTIONS = new Set(["fs_read", "fs_list", "fs_write", "fs_mkdir", "fs_delete"]);
 
@@ -99,7 +103,26 @@ const VOICE_ACTIONS = new Set([
   "voice_status", "voice_config_get", "voice_config_set",
   "voice_list_samples", "voice_save_sample", "voice_delete_sample",
   "tts_speak", "stt_transcribe", "stt_config_get", "stt_config_set",
+  "listen_status", "listen_config_set", "listen_start", "listen_stop",
 ]);
+
+/* Um único loop de escuta por processo. Dois loops brigariam pelo microfone e
+   dobrariam o custo de CPU sem escutar nada a mais. O callback de wake word é
+   injetado pelo ws-client (é ele que sabe falar com o hub). */
+let escuta = null;
+let aoAcordar = null;
+
+/** Chamado no boot pelo ws-client: define o que fazer quando a wake word bate. */
+export function setWakeHandler(fn) { aoAcordar = fn; }
+
+function garanteEscuta() {
+  if (escuta) return escuta;
+  escuta = createListener({
+    onWake: (ev) => { try { aoAcordar?.(ev); } catch {} },
+    onError: (motivo, dica) => console.warn("[escuta]", motivo, dica || ""),
+  });
+  return escuta;
+}
 
 async function handleVoice(action, args) {
   try {
@@ -160,6 +183,25 @@ async function handleVoice(action, args) {
         return { ok: true, data: { text: r.text, model: r.model,
                                    wake: detectWakeWord(r.text) } };
       }
+      /* Escuta contínua ("Ei, JARVIS" sem clicar em nada). O status carrega o
+         custo estimado junto — ligar isto é ASR rodando sem parar, e quem
+         liga precisa ver a conta antes. */
+      case "listen_status":
+        return { ok: true, data: {
+          ...garanteEscuta().status(),
+          config: loadListenerConfig(),
+          limites: LISTENER_LIMITES,
+          gravadores: Object.keys(RECORDERS),
+        } };
+      case "listen_config_set":
+        return { ok: true, data: { config: saveListenerConfig(args), setup: checkListener() } };
+      case "listen_start": {
+        const r = garanteEscuta().start();
+        return r.ok ? { ok: true, data: r } : { ok: false, data: r };
+      }
+      case "listen_stop":
+        return { ok: true, data: await garanteEscuta().stop() };
+
       default:
         return { ok: false, data: { error: `ação de voz desconhecida: ${action}` } };
     }

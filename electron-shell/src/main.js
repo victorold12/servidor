@@ -4,7 +4,7 @@
  * este arquivo só cria janelas e importa aqueles módulos, sem reimplementar
  * nada. Ver ../agente-local/README.md pra saber o que cada peça faz.
  */
-import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -179,6 +179,25 @@ function createMainWindow(pairedBackendUrl) {
   });
 }
 
+/* Notificação nativa pedida pelo painel (preload → jarvisDesktop.notify).
+ * Só notifica quando a janela NÃO está em foco: avisar de algo que a pessoa
+ * está olhando é ruído. Clicar traz o JARVIS pra frente. */
+function setupNotificacoes() {
+  ipcMain.on("jarvis:notify", (_evt, { titulo, corpo } = {}) => {
+    if (!Notification.isSupported()) return;
+    const focada = mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused();
+    if (focada) return;
+    const n = new Notification({
+      title: String(titulo || "JARVIS").slice(0, 120),
+      body: String(corpo || "").slice(0, 400),
+      icon: ICON_PNG,
+      silent: false,
+    });
+    n.on("click", () => focusAnyWindow());
+    n.show();
+  });
+}
+
 function createTray() {
   const tray_ = new Tray(nativeImage.createFromPath(TRAY_PNG));
   tray_.setToolTip("JARVIS — iniciando…");
@@ -308,6 +327,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     createSplash();
     createTray();
+    setupNotificacoes();
 
     // Failsafe absoluto: não importa o que trave no fluxo (pareamento, keytar,
     // conexão), a splash NUNCA fica pra sempre. Se em 12s nada abriu o painel e

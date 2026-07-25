@@ -10,7 +10,7 @@ import { loadConfig, saveConfig } from "./config.js";
 import { getToken } from "./token-vault.js";
 import { createAgentConnection } from "./ws-client.js";
 import { createNativeConfirm } from "./confirm.js";
-import { createCommandHandler } from "./command-dispatcher.js";
+import { createCommandHandler, setWakeHandler } from "./command-dispatcher.js";
 
 async function main() {
   const cfg = loadConfig();
@@ -55,6 +55,14 @@ async function main() {
       // configuração explícita, que ainda não existe. Ver Seção 6 do esquema.
       isUnlocked: () => false,
     }),
+  });
+
+  /* Quando o loop de escuta ouve "Ei, JARVIS", o comando sobe pelo WS. O
+     agente NÃO executa por conta própria: quem decide o que fazer com a frase é
+     o painel, com as mesmas confirmações de tier de sempre. */
+  setWakeHandler((ev) => {
+    console.log(`[jarvis-agente] wake word: ${JSON.stringify(ev.command || ev.transcript)}`);
+    conn.sendWake(ev);
   });
 
   const shutdown = () => {

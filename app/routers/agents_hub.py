@@ -183,6 +183,16 @@ async def agent_ws(ws: WebSocket):
                 # progresso parcial de uma ação longa (gerar/baixar arquivo).
                 # Só repassa pra quem está acompanhando aquele comando.
                 _progress_bus.publish(msg.get("id"), msg)
+            elif mtype == "wake":
+                # "Ei, JARVIS" ouvido no PC. Vira fila pro painel buscar — o
+                # backend não executa nada por conta disso: quem decide o que
+                # fazer com a frase é o painel, com as confirmações de sempre.
+                _wake_queue.push(agent_id, {
+                    "command": (msg.get("command") or None),
+                    "transcript": str(msg.get("transcript") or "")[:500],
+                    "greeted": bool(msg.get("greeted")),
+                    "ts": time.time(),
+                })
             elif mtype == "result":
                 _progress_bus.close(msg.get("id"))
                 _pending_results.resolve(msg.get("id"), msg)
@@ -190,6 +200,35 @@ async def agent_ws(ws: WebSocket):
         pass
     finally:
         hub.disconnect(agent_id, ws)
+
+
+class _WakeQueue:
+    """Wake words ouvidas no PC, esperando o painel buscar.
+
+    Só memória, e curta de propósito: se o painel está fechado, um "ei jarvis"
+    de meia hora atrás não deve executar quando ele abrir. Guarda no máximo
+    _MAX por agente e descarta o que passou de _TTL segundos.
+    """
+
+    _MAX = 10
+    _TTL = 120.0
+
+    def __init__(self):
+        self._por_agente: dict[str, list[dict]] = {}
+
+    def push(self, agent_id: str, ev: dict) -> None:
+        fila = self._por_agente.setdefault(agent_id, [])
+        fila.append(ev)
+        del fila[:-self._MAX]
+
+    def drain(self, agent_id: str) -> list[dict]:
+        """Devolve e REMOVE os eventos recentes — cada wake word executa uma vez."""
+        agora = time.time()
+        fila = self._por_agente.pop(agent_id, [])
+        return [e for e in fila if agora - e.get("ts", 0) <= self._TTL]
+
+
+_wake_queue = _WakeQueue()
 
 
 class _PendingResults:
@@ -339,6 +378,17 @@ def list_agents():
         }
         for r in rows
     ]}
+
+
+@router.get("/api/agents/{agent_id}/wake", dependencies=[Depends(require_token)])
+def drain_wake(agent_id: str):
+    """Wake words que o PC ouviu e o painel ainda não consumiu.
+
+    Drena: cada "Ei, JARVIS" é entregue uma vez só, senão o painel executaria o
+    mesmo pedido a cada consulta. Evento com mais de 2 minutos é descartado — se
+    o painel estava fechado, um comando velho não deve rodar quando ele abrir.
+    """
+    return {"agent_id": agent_id, "events": _wake_queue.drain(agent_id)}
 
 
 @router.post("/api/agents/{agent_id}/revoke", dependencies=[Depends(require_token)])

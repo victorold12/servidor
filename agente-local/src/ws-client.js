@@ -29,7 +29,7 @@ function toWsUrl(httpUrl) {
  * @param {(evt:object)=>void} [opts.onEvent]  ciclo de vida da conexão (log/UI)
  * @param {number} [opts.heartbeatMs]
  * @param {typeof WebSocket} [opts.WebSocketImpl]  injetável pra teste
- * @returns {{close():void, sendAudit(entry:object):void}}
+ * @returns {{close():void, sendAudit(entry:object):void, sendWake(ev:object):void}}
  */
 export function createAgentConnection({
   backendUrl,
@@ -126,6 +126,14 @@ export function createAgentConnection({
     safeSend({ type: "audit", ...entry });
   }
 
+  /* Wake word detectada pelo loop de escuta. Sobe pelo mesmo WS já autenticado
+     (o agente continua sendo só cliente — Seção 8, nunca abre porta). O que faz
+     com o comando é decisão do painel, não do agente: aqui só avisa. */
+  function sendWake(ev) {
+    safeSend({ type: "wake", command: ev?.command ?? null,
+               transcript: ev?.transcript ?? "", greeted: !!ev?.greeted });
+  }
+
   function close() {
     stopped = true;
     clearTimeout(reconnectTimer);
@@ -134,5 +142,5 @@ export function createAgentConnection({
   }
 
   connect();
-  return { close, sendAudit };
+  return { close, sendAudit, sendWake };
 }

@@ -9,7 +9,7 @@
  * se adaptar ao rodar dentro do shell (ex.: esconder algo que só faz sentido
  * no navegador). Adicionar uma capability = adicionar uma linha aqui, nomeada.
  */
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 // URL do backend pareado, injetada pelo main.js via webPreferences.
 // additionalArguments (process.argv funciona mesmo no preload sandboxed).
@@ -27,4 +27,13 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   isElectron: true,
   platform: process.platform,
   backendUrl: argValue("--jarvis-backend-url="),
+
+  /* Notificação nativa do Windows. A Notification API do navegador dentro do
+   * Electron pede permissão e não acende o ícone da barra de tarefas; quem faz
+   * isso direito é o processo principal. Só título e corpo cruzam a ponte —
+   * nada de callback nem HTML, pra a superfície continuar do tamanho do que
+   * a capability precisa. */
+  notify(titulo, corpo) {
+    ipcRenderer.send("jarvis:notify", { titulo: String(titulo || ""), corpo: String(corpo || "") });
+  },
 });
