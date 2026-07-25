@@ -63,6 +63,11 @@ jobs:
       - name: Roda os testes do backend
         working-directory: servidor
         shell: bash
+        env:
+          # O runner do Windows entrega stdout em cp1252, e vários testes
+          # imprimem "✓"/"≠" — sem isto eles PASSAM e ainda assim quebram o
+          # build com UnicodeEncodeError na hora de escrever o resultado.
+          PYTHONIOENCODING: utf-8
         run: |
           falhou=0
           for t in tests/test_*.py; do
