@@ -20,8 +20,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..openrouter import chat, chat_stream, content_of, resolve_key
+from ..router_llm import classify, run_fusion
 from ..pc_tools import PC_TOOL_LABEL, PC_TOOLS, run_pc_tool
 from ..services import scrape_url, web_search
+from .catalog import fetch_catalog
 from .mcp_client import mcp_call_tool, mcp_list_tools
 
 router = APIRouter()
@@ -65,6 +67,8 @@ class AgentIn(BaseModel):
     stream: bool = False
     # Agente Local pareado. Só com ele o modelo ganha as ferramentas de arquivo.
     agent_id: str | None = None
+    # Roteamento automático: "auto" | "free" | "fusion". Vazio = usa `model`.
+    route: str = ""
 
 
 def _sanitize_tool_name(name: str) -> str:
@@ -149,6 +153,41 @@ async def _stream_agent(body: AgentIn, key: str):
       error              → falha honesta (nada de resposta inventada)
     """
     messages = list(body.messages)
+    modelo = body.model
+
+    # ---- roteamento automático (RouteLLM), quando pedido ----
+    if body.route:
+        pedido = next((m.get("content", "") for m in reversed(messages)
+                       if m.get("role") == "user"), "")
+        try:
+            catalogo, _ = await fetch_catalog(key)
+        except RuntimeError as exc:
+            # sem catálogo não há como rotear; segue no modelo padrão e avisa
+            yield _ndjson("route", mode=body.route, fallback=True,
+                          note=f"catálogo indisponível ({exc}); usando o modelo padrão")
+            catalogo = []
+
+        if catalogo and body.route == "fusion":
+            async for ev in run_fusion(messages, catalogo, key):
+                if ev["type"] == "answer":
+                    yield _ndjson("token", text=ev["text"])
+                    yield _ndjson("done", answer=ev["text"], files=[])
+                    return
+                if ev["type"] == "error":
+                    yield _ndjson("error", message=ev["message"])
+                    return
+                yield _ndjson("route", **{k: v for k, v in ev.items() if k != "type"})
+            return
+
+        if catalogo:
+            escolhido = await classify(pedido, catalogo, key, body.route == "free")
+            if escolhido:
+                modelo = escolhido
+                yield _ndjson("route", mode=body.route, model=escolhido)
+            else:
+                yield _ndjson("route", mode=body.route, fallback=True,
+                              note="classificador não decidiu; usando o modelo padrão")
+
     mcp_defs, mcp_routing = await _build_mcp_tools(body.mcp_servers) if body.mcp_servers else ([], {})
     tools = TOOLS + mcp_defs
     # ferramentas de PC só entram se existe um Agente Local pareado pra executar
@@ -165,7 +204,7 @@ async def _stream_agent(body: AgentIn, key: str):
             text_parts: list[str] = []
             calls: list[dict] = []
 
-            async for ev in chat_stream(messages, key=key, model=body.model, tools=tools):
+            async for ev in chat_stream(messages, key=key, model=modelo, tools=tools):
                 kind = ev.get("type")
                 if kind == "token":
                     text_parts.append(ev["text"])

@@ -42,24 +42,18 @@ def _slim(m: dict) -> dict:
     }
 
 
-@router.get("/models")
-async def list_models(
-    refresh: bool = False,
-    x_or_key: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
-):
+async def fetch_catalog(key: str = "", refresh: bool = False) -> tuple[list[dict], str]:
+    """Devolve (modelos, origem). Reaproveitado pela rota e pelo roteador de
+    modelos — os dois precisam da mesma lista, e nenhum deve manter a sua.
+
+    Origem é uma de: "cache", "openrouter", "cache_expirado". Levanta se não
+    houver nem rede nem cache: sem lista, quem chamou decide o que fazer, mas
+    ninguém segue com lista vazia achando que é a verdade.
+    """
     agora = time.time()
     if not refresh and _cache["models"] and agora - _cache["at"] < _TTL:
-        return {
-            "source": "cache",
-            "fetched_at": _cache["at"],
-            "count": len(_cache["models"]),
-            "data": _cache["models"],
-        }
+        return _cache["models"], "cache"
 
-    # a chave é opcional aqui: /models é público no OpenRouter. Se o usuário
-    # mandou a dele, usamos — alguns planos veem modelos a mais.
-    key = resolve_key(x_or_key or authorization)
     headers = {"X-Title": settings.site_title}
     if key:
         headers["Authorization"] = f"Bearer {key}"
@@ -71,23 +65,43 @@ async def list_models(
             bruto = resp.json().get("data") or []
     except Exception as exc:  # noqa: BLE001 — rede/upstream fora do nosso controle
         if _cache["models"]:
-            # cache velho é melhor que nada, mas o cliente precisa saber que é velho
-            return {
-                "source": "cache_expirado",
-                "fetched_at": _cache["at"],
-                "count": len(_cache["models"]),
-                "warning": f"OpenRouter inacessível agora ({exc}). Lista pode estar desatualizada.",
-                "data": _cache["models"],
-            }
+            return _cache["models"], "cache_expirado"
+        raise RuntimeError(f"OpenRouter inacessível: {exc}") from exc
+
+    modelos = [_slim(m) for m in bruto if m.get("id")]
+    if not modelos:
+        if _cache["models"]:
+            return _cache["models"], "cache_expirado"
+        raise RuntimeError("OpenRouter devolveu catálogo vazio.")
+
+    _cache["models"] = modelos
+    _cache["at"] = agora
+    return modelos, "openrouter"
+
+
+@router.get("/models")
+async def list_models(
+    refresh: bool = False,
+    x_or_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+):
+    # a chave é opcional aqui: /models é público no OpenRouter. Se o usuário
+    # mandou a dele, usamos — alguns planos veem modelos a mais.
+    key = resolve_key(x_or_key or authorization)
+    try:
+        modelos, origem = await fetch_catalog(key, refresh)
+    except RuntimeError as exc:
         raise HTTPException(
             status_code=503,
             detail=f"Não foi possível obter o catálogo do OpenRouter: {exc}",
         ) from exc
 
-    modelos = [_slim(m) for m in bruto if m.get("id")]
-    if not modelos:
-        raise HTTPException(status_code=503, detail="OpenRouter devolveu catálogo vazio.")
-
-    _cache["models"] = modelos
-    _cache["at"] = agora
-    return {"source": "openrouter", "fetched_at": agora, "count": len(modelos), "data": modelos}
+    corpo = {
+        "source": origem,
+        "fetched_at": _cache["at"],
+        "count": len(modelos),
+        "data": modelos,
+    }
+    if origem == "cache_expirado":
+        corpo["warning"] = ("OpenRouter inacessível agora. Lista pode estar desatualizada.")
+    return corpo
