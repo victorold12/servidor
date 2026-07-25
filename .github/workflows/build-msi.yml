@@ -57,6 +57,20 @@ jobs:
         working-directory: servidor/agente-local
         run: npm test
 
+      # O backend não vai dentro do .msi, mas o Agente Local conversa com ele:
+      # se o contrato quebrar, o instalador sai com um app que não funciona.
+      # Rodar aqui é barato (os testes não usam rede) e evita empacotar isso.
+      - name: Roda os testes do backend
+        working-directory: servidor
+        shell: bash
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+
       # --- Electron shell: empacota ---
       - name: Instala deps do Electron shell
         working-directory: servidor/electron-shell

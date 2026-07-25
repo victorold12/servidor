@@ -107,6 +107,17 @@ function createMainWindow(pairedBackendUrl) {
     },
   });
 
+  /* Permissões do renderer: liberar SÓ o microfone, que é o que a cena JARVIS
+   * e o ditado precisam (Seção 14). Sem handler explícito o padrão do Electron
+   * é aprovar tudo — inclusive geolocalização, notificação e captura de tela,
+   * que este app não usa. Lista fechada: o que não está aqui é negado. */
+  const PERMITIDAS = new Set(["media", "audioCapture", "clipboard-sanitized-write"]);
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, permissao, aceitar, detalhes) => {
+    // "media" cobre mic e câmera — só passa quando o pedido é de áudio.
+    if (permissao === "media" && detalhes?.mediaTypes?.includes("video")) return aceitar(false);
+    aceitar(PERMITIDAS.has(permissao));
+  });
+
   let shown = false;
   const showOnce = () => {
     if (shown) return;
