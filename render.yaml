@@ -20,6 +20,23 @@ services:
       # Cole o mesmo valor no site em Config > Backend VTz OS > Token de acesso.
       - key: BACKEND_TOKEN
         sync: false
+      # ONDE O BANCO VIVE. Sem isto o SQLite fica dentro do container, e o
+      # container do Render é recriado a cada deploy e a cada vez que o plano
+      # free acorda de hibernar — ou seja, conversa, memória e pareamento
+      # somem sozinhos. Apontar pro disco só resolve junto do bloco `disk`
+      # abaixo, que exige plano pago (o free não aceita disco).
+      - key: JARVIS_DB_PATH
+        value: /var/data/jarvis.db
+      # Snapshots do backup automático no mesmo disco.
+      - key: BACKUP_DIR
+        value: /var/data/backups
+    # Descomente junto com plan: starter (US$7/mês). É o que faz os dados
+    # sobreviverem ao restart. No plano free, deixe comentado E apague as duas
+    # variáveis acima — sem disco, /var/data não existe e o backend não sobe.
+    # disk:
+    #   name: vtz-dados
+    #   mountPath: /var/data
+    #   sizeGB: 1
       # Opcional: chaves dos conectores como variaveis (persistem entre restarts).
       # Se preferir, deixe em branco e configure pelo site (aba Conectores).
       # - key: NOTION_TOKEN

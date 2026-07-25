@@ -15,6 +15,11 @@ from pathlib import Path
 # do Agente Local, que sobe este backend de verdade num processo separado e não
 # pode tocar no jarvis.db real). Sem a env var, é o arquivo de sempre.
 _DB_PATH = Path(os.environ.get("JARVIS_DB_PATH") or (Path(__file__).resolve().parent.parent / "jarvis.db"))
+# sqlite3.connect não cria diretório: apontar pra /var/data/jarvis.db num host
+# onde o disco não foi montado derrubaria o processo no boot com "unable to open
+# database file". Criar aqui faz a mesma configuração servir com e sem disco —
+# sem disco os dados são efêmeros, mas o serviço sobe.
+_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS paired_agents (
