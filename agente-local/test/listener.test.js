@@ -100,6 +100,15 @@ test("escuta se recusa a começar sem gravador, dizendo por quê", () => {
   }
 });
 
+/* Os três testes do loop usam scripts POSIX (#!/bin/sh) como gravador e whisper
+   falsos. No Windows isso não roda: spawn com shell:false não executa .cmd/.bat
+   (bloqueado desde a correção do CVE-2024-27980 no Node), então não há como
+   montar o mesmo falso lá. O que é específico do Windows — os argumentos do
+   ffmpeg com -f dshow — está coberto pelo último teste, que roda em todo lugar.
+   Fora do POSIX, estes três são declarados como pulados em vez de falharem. */
+const SO_POSIX = os.platform() !== "win32";
+const soPosix = { skip: SO_POSIX ? false : "loop com gravador falso só roda em POSIX" };
+
 // ---------------------------------------------------------------- loop real
 /* Gravador e whisper falsos: scripts de shell de verdade, chamados por spawn
    igual aos reais. É o que permite testar o encadeamento inteiro sem hardware. */
@@ -132,7 +141,7 @@ exit 0
   return { bin, modelos };
 }
 
-test("loop completo: grava, transcreve, detecta a wake word e separa o comando", async () => {
+test("loop completo: grava, transcreve, detecta a wake word e separa o comando", soPosix, async () => {
   montaFalsos("Ei JARVIS abre o navegador");
   const { saveSttConfig } = await import("../src/stt.js");
   saveSttConfig({ binary: "whisper-cli", model: "base",
@@ -169,7 +178,7 @@ test("loop completo: grava, transcreve, detecta a wake word e separa o comando",
   assert.equal(l.running, false, "stop tem que parar de verdade");
 });
 
-test("o áudio do microfone não fica em disco depois do ciclo", async () => {
+test("o áudio do microfone não fica em disco depois do ciclo", soPosix, async () => {
   montaFalsos("Ei JARVIS que horas são");
   const { saveSttConfig } = await import("../src/stt.js");
   saveSttConfig({ binary: "whisper-cli", model: "base",
@@ -186,7 +195,7 @@ test("o áudio do microfone não fica em disco depois do ciclo", async () => {
   assert.deepEqual(sobrou, [], `gravação do microfone sobrou em disco: ${sobrou.join(", ")}`);
 });
 
-test("fala sem a wake word não dispara nada", async () => {
+test("fala sem a wake word não dispara nada", soPosix, async () => {
   montaFalsos("preciso comprar pão amanhã de manhã");
   const { saveSttConfig } = await import("../src/stt.js");
   saveSttConfig({ binary: "whisper-cli", model: "base",
