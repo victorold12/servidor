@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/api/connectors/google/callback"
     replicate_api_key: str = ""
 
+    # Busca semântica na memória. Endpoint compatível com a API da OpenAI
+    # (/embeddings): OpenAI, HuggingFace TEI, Ollama, LM Studio, vLLM.
+    # Sem isto, a busca cai em escore léxico e diz que caiu.
+    embeddings_base: str = ""
+    embeddings_model: str = ""
+    embeddings_key: str = ""
+
     request_timeout: float = 60.0
 
     @property

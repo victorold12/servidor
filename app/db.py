@@ -79,6 +79,32 @@ CREATE TABLE IF NOT EXISTS memory_edges (
     confidence REAL NOT NULL DEFAULT 0.9
 );
 
+-- Camada "diária" da memória (Seção 13.1, absorvido do Leon AI): um resumo
+-- consolidado por dia, entre o grafo persistente e o contexto recente. Serve
+-- pra busca não afogar em fato solto — o dia inteiro vira um texto só.
+CREATE TABLE IF NOT EXISTS memory_daily (
+    user_id    TEXT NOT NULL DEFAULT 'victor',
+    day        TEXT NOT NULL,                 -- YYYY-MM-DD
+    summary    TEXT NOT NULL,
+    fact_count INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (user_id, day)
+);
+
+-- Vetores pra busca semântica. Guardados como BLOB de float32 pra não virar
+-- um blob opaco de JSON; `model` registra quem gerou, porque vetor de modelo
+-- diferente não é comparável com os outros.
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    user_id TEXT NOT NULL DEFAULT 'victor',
+    kind    TEXT NOT NULL,                    -- 'node' | 'daily'
+    ref     TEXT NOT NULL,                    -- node_id, ou o dia
+    text    TEXT NOT NULL,
+    dim     INTEGER NOT NULL,
+    vector  BLOB NOT NULL,
+    model   TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind, ref)
+);
+
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_pending_user_code ON pending_pairings(user_code);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_user ON memory_edges(user_id);
@@ -124,6 +150,14 @@ def _migrate(conn):
         conn.execute("ALTER TABLE audit_log ADD COLUMN prev_hash TEXT")
     if "hash" not in cols:
         conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT")
+
+    # Quando o fato entrou. A camada diária precisa saber o dia de cada nó;
+    # sem isto, um banco antigo não tem como ser agrupado por data.
+    mem_cols = {r["name"] for r in conn.execute("PRAGMA table_info(memory_nodes)")}
+    if "created_at" not in mem_cols:
+        conn.execute("ALTER TABLE memory_nodes ADD COLUMN created_at REAL")
+        # nós que já existiam ficam com NULL — honesto: não sabemos a data deles,
+        # e inventar uma colocaria fato velho no resumo de hoje.
 
 
 def now() -> float:
