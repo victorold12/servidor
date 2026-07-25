@@ -214,6 +214,9 @@ async def _stream_agent(body: AgentIn, key: str):
                     calls = ev["calls"]
                 elif kind == "usage":
                     usage = {k: v for k, v in ev.items() if k != "type"}
+                elif kind == "provider":
+                    # quem respondeu de verdade (OpenRouter ou modelo local)
+                    yield _ndjson("provider", **{k: v for k, v in ev.items() if k != "type"})
 
             if not calls:
                 break

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import settings
-from .routers import agent, agents_hub, autonomous, catalog, connectors, google, health, mcp_client, memory, orchestrate, pairing, research, scrape, video
+from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -59,6 +59,13 @@ app.include_router(video.router, prefix="/api/video", tags=["video"], dependenci
 app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"], dependencies=protected)
 app.include_router(memory.router, prefix="/api", tags=["memory"], dependencies=protected)
 app.include_router(catalog.router, prefix="/api", tags=["catalog"], dependencies=protected)
+app.include_router(analytics.router, prefix="/api", tags=["analytics"], dependencies=protected)
+app.include_router(backup.router, prefix="/api", tags=["backup"], dependencies=protected)
+# Webhook é chamado por Discord/Telegram, que não têm o token de sessão. A trava
+# aqui é outra: segredo no caminho da URL + allowlist de quem pode mandar comando
+# (ver routers/messaging.py). Rate limit continua valendo.
+app.include_router(messaging.router, prefix="/api", tags=["messaging"],
+                   dependencies=[Depends(rate_limit)])
 
 # Pareamento do Agente Local: NÃO leva o `protected` genérico — /pair/start e
 # /pair/poll são chamados sem token (o agente ainda não tem nenhum); cada rota
