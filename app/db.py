@@ -105,9 +105,34 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
     PRIMARY KEY (user_id, kind, ref)
 );
 
+-- Conversas espelhadas do painel (Seção 7). O localStorage do navegador
+-- continua sendo o lugar onde a conversa é escrita — isto é o espelho que
+-- deixa ela aparecer em outro dispositivo e sobreviver a "limpar cache".
+--
+-- Regra de conflito: ÚLTIMA ESCRITA GANHA, por conversa, comparando
+-- updated_at. Nunca se faz merge da lista de mensagens: intercalar as
+-- mensagens de dois dispositivos produziria uma conversa que nunca
+-- aconteceu. `payload` guarda a conversa inteira como o painel a escreve.
+--
+-- `deleted_at` é lápide, não exclusão: sem ela, um dispositivo que ainda não
+-- sincronizou reenviaria a conversa apagada e ela voltaria do nada.
+CREATE TABLE IF NOT EXISTS conversations (
+    user_id    TEXT NOT NULL DEFAULT 'victor',
+    conv_id    TEXT NOT NULL,
+    title      TEXT NOT NULL DEFAULT '',
+    pinned     INTEGER NOT NULL DEFAULT 0,
+    msg_count  INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL,
+    synced_at  REAL NOT NULL,
+    deleted_at REAL,
+    payload    TEXT NOT NULL,
+    PRIMARY KEY (user_id, conv_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_pending_user_code ON pending_pairings(user_code);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_user ON memory_edges(user_id);
+CREATE INDEX IF NOT EXISTS idx_conv_user_updated ON conversations(user_id, updated_at DESC);
 """
 
 

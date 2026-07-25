@@ -160,3 +160,53 @@ def import_all(body: ImportIn):
         "note": ("Vetores de busca não vêm no pacote (dependem do modelo de "
                  "embedding em uso) — rode /api/memory/reindex depois de restaurar."),
     }
+
+
+# =====================================================================
+# Backup automático agendado (app/autobackup.py)
+# =====================================================================
+from .. import autobackup  # noqa: E402
+
+
+@router.get("/backup/auto")
+def auto_status():
+    """Estado do backup automático, com o aviso de ONDE o snapshot mora.
+
+    O aviso vai na resposta de propósito: "backup na nuvem" e "backup no mesmo
+    disco do banco" são coisas diferentes, e quem lê precisa saber qual das duas
+    tem antes de confiar.
+    """
+    return autobackup.status()
+
+
+@router.post("/backup/auto/run")
+def auto_run():
+    """Tira um snapshot agora, fora do agendamento."""
+    try:
+        return {"ok": True, **autobackup.escreve_snapshot()}
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Não consegui escrever o snapshot: {e}") from e
+
+
+@router.get("/backup/auto/list")
+def auto_list():
+    return {"snapshots": autobackup.lista(), "pasta": str(autobackup.diretorio())}
+
+
+@router.get("/backup/auto/download/{arquivo}")
+def auto_download(arquivo: str):
+    """Baixa um snapshot. Só nome de arquivo — nada de caminho.
+
+    `..` ou barra aqui viraria leitura de qualquer arquivo do servidor, então o
+    nome é validado contra o padrão exato que escreve_snapshot() usa.
+    """
+    import re
+
+    from fastapi.responses import FileResponse
+
+    if not re.fullmatch(r"jarvis-\d{8}-\d{6}\.json\.gz", arquivo):
+        raise HTTPException(status_code=400, detail="Nome de snapshot inválido.")
+    caminho = autobackup.diretorio() / arquivo
+    if not caminho.is_file():
+        raise HTTPException(status_code=404, detail="Snapshot não encontrado.")
+    return FileResponse(caminho, media_type="application/gzip", filename=arquivo)

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     rate_limit: int = 600
     rate_window: float = 300.0
 
+    # Backup automático (app/autobackup.py). Desligado por padrão: escrever no
+    # disco de alguém sem ele pedir não é papel do programa. BACKUP_EVERY_HOURS>0
+    # liga o agendamento; BACKUP_DIR vazio = pasta "backups" ao lado do banco.
+    backup_every_hours: float = 0.0
+    backup_keep: int = 14
+    backup_dir: str = ""
+
     # Discord/Telegram (Seção 5). Sem MESSAGING_SECRET o webhook fica desligado;
     # sem allowlist, ele recusa tudo — negar é o padrão seguro aqui.
     messaging_secret: str = ""

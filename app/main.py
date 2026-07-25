@@ -3,6 +3,7 @@
 Sobe com:  uvicorn app.main:app --reload
 Docs interativas em /docs
 """
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -10,9 +11,9 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import db
+from . import autobackup, db
 from .config import settings
-from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video, voice
+from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, conversations, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video, voice
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -29,7 +30,17 @@ async def lifespan(app: FastAPI):
             "está aberto para qualquer um na internet usar. Configure "
             "BACKEND_TOKEN em Environment no painel do Render."
         )
-    yield
+    # Backup automático: tarefa de fundo, e só existe se BACKUP_EVERY_HOURS > 0.
+    tarefa = None
+    if settings.backup_every_hours > 0:
+        tarefa = asyncio.create_task(autobackup.loop_agendado())
+        logger.info("backup automático a cada %sh em %s",
+                    settings.backup_every_hours, autobackup.diretorio())
+    try:
+        yield
+    finally:
+        if tarefa is not None:
+            tarefa.cancel()
 
 
 app = FastAPI(title=settings.site_title, version="0.1.0", lifespan=lifespan)
@@ -61,6 +72,7 @@ app.include_router(memory.router, prefix="/api", tags=["memory"], dependencies=p
 app.include_router(catalog.router, prefix="/api", tags=["catalog"], dependencies=protected)
 app.include_router(analytics.router, prefix="/api", tags=["analytics"], dependencies=protected)
 app.include_router(backup.router, prefix="/api", tags=["backup"], dependencies=protected)
+app.include_router(conversations.router, prefix="/api", tags=["conversations"], dependencies=protected)
 app.include_router(voice.router, prefix="/api", tags=["voice"], dependencies=protected)
 # Webhook é chamado por Discord/Telegram, que não têm o token de sessão. A trava
 # aqui é outra: segredo no caminho da URL + allowlist de quem pode mandar comando
