@@ -179,7 +179,12 @@ async def agent_ws(ws: WebSocket):
                     conn.execute("UPDATE paired_agents SET last_seen_at = ? WHERE agent_id = ?", (time.time(), agent_id))
             elif mtype == "audit":
                 _write_audit(agent_id, msg)
+            elif mtype == "progress":
+                # progresso parcial de uma ação longa (gerar/baixar arquivo).
+                # Só repassa pra quem está acompanhando aquele comando.
+                _progress_bus.publish(msg.get("id"), msg)
             elif mtype == "result":
+                _progress_bus.close(msg.get("id"))
                 _pending_results.resolve(msg.get("id"), msg)
     except WebSocketDisconnect:
         pass
@@ -207,7 +212,80 @@ class _PendingResults:
         self._futures.pop(cmd_id, None)
 
 
+class _ProgressBus:
+    """Entrega os `progress` de um comando pra quem estiver acompanhando.
+
+    Existe porque o resultado final não conta a história toda: gerar ou baixar
+    um arquivo leva tempo, e o painel mostra a barra andando de verdade. Sem
+    ninguém inscrito o progresso é descartado — não acumula memória.
+    """
+
+    def __init__(self):
+        self._queues: dict[str, asyncio.Queue] = {}
+
+    def subscribe(self, cmd_id: str) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        self._queues[cmd_id] = q
+        return q
+
+    def publish(self, cmd_id, msg: dict):
+        q = self._queues.get(cmd_id)
+        if q:
+            q.put_nowait(msg)
+
+    def close(self, cmd_id):
+        q = self._queues.pop(cmd_id, None)
+        if q:
+            q.put_nowait(None)          # sentinela: fim do progresso
+
+    def unsubscribe(self, cmd_id: str):
+        self._queues.pop(cmd_id, None)
+
+
 _pending_results = _PendingResults()
+_progress_bus = _ProgressBus()
+
+
+async def run_command_streaming(agent_id: str, action: str, args: dict,
+                                timeout: float = 300.0):
+    """Manda um comando pro Agente Local e vai devolvendo o progresso.
+
+    Gera os `progress` conforme chegam e, no fim, o `result`. Usado pelo
+    streaming do JARVIS pra barra de arquivo refletir o processamento real.
+    """
+    if not hub.is_online(agent_id):
+        yield {"type": "error", "message": "Agente Local offline. Abra o app no PC pra habilitar ações de arquivo."}
+        return
+
+    cmd_id = f"{agent_id}:{time.time_ns()}"
+    fut = _pending_results.new(cmd_id)
+    queue = _progress_bus.subscribe(cmd_id)
+    sent = await hub.send(agent_id, {
+        "type": "command", "id": cmd_id, "action": action, "args": args,
+    })
+    if not sent:
+        _pending_results.cancel(cmd_id)
+        _progress_bus.unsubscribe(cmd_id)
+        yield {"type": "error", "message": "Agente Local offline."}
+        return
+
+    async def drain():
+        while True:
+            msg = await queue.get()
+            if msg is None:
+                return
+            yield msg
+
+    try:
+        pump = asyncio.ensure_future(asyncio.wait_for(fut, timeout=timeout))
+        async for msg in drain():
+            yield {"type": "progress", **msg}
+        yield {"type": "result", **(await pump)}
+    except asyncio.TimeoutError:
+        yield {"type": "error", "message": "O Agente Local não respondeu a tempo."}
+    finally:
+        _pending_results.cancel(cmd_id)
+        _progress_bus.unsubscribe(cmd_id)
 
 
 # ---------------- Gestão (todas exigem token de sessão) ----------------

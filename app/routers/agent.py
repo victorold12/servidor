@@ -16,9 +16,11 @@ import json
 import re
 
 from fastapi import APIRouter, Header
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..openrouter import chat, content_of, resolve_key
+from ..openrouter import chat, chat_stream, content_of, resolve_key
+from ..pc_tools import PC_TOOL_LABEL, PC_TOOLS, run_pc_tool
 from ..services import scrape_url, web_search
 from .mcp_client import mcp_call_tool, mcp_list_tools
 
@@ -58,6 +60,11 @@ class AgentIn(BaseModel):
     max_steps: int = 6
     # URLs de servidores MCP (Streamable HTTP) cujas ferramentas o agente pode usar.
     mcp_servers: list[str] = []
+    # stream=True devolve NDJSON de eventos (contrato do painel). Sem isso, o
+    # endpoint responde JSON de uma vez, como sempre respondeu.
+    stream: bool = False
+    # Agente Local pareado. Só com ele o modelo ganha as ferramentas de arquivo.
+    agent_id: str | None = None
 
 
 def _sanitize_tool_name(name: str) -> str:
@@ -108,6 +115,121 @@ async def _run_tool(name: str, args: dict, mcp_routing: dict) -> str:
     return f"ferramenta desconhecida: {name}"
 
 
+def _ndjson(event: str, **data) -> str:
+    """Uma linha por evento. O painel aceita NDJSON e SSE; NDJSON é mais barato."""
+    return json.dumps({"type": event, **data}, ensure_ascii=False) + "\n"
+
+
+# Rótulo humano por ferramenta — o que o painel mostra na etapa/legenda.
+_TOOL_LABEL = {
+    "web_search": "Buscando na web",
+    "fetch_url": "Lendo a página",
+}
+
+
+def _label_for(tool_name: str) -> str:
+    if tool_name in _TOOL_LABEL:
+        return _TOOL_LABEL[tool_name]
+    if tool_name.startswith("pc_"):
+        return PC_TOOL_LABEL.get(tool_name, "Executando no PC")
+    if tool_name.startswith("mcp__"):
+        return "Ferramenta externa: " + tool_name.rsplit("__", 1)[-1]
+    return tool_name
+
+
+async def _stream_agent(body: AgentIn, key: str):
+    """Roda o mesmo laço de ferramentas do `agent`, mas emitindo eventos.
+
+    Contrato dos eventos (o painel depende exatamente destes nomes):
+      tool / step        → etapa em execução ou concluída
+      file_begin/_progress → arquivo real sendo gerado pelo Agente Local
+      token              → pedaço de texto da resposta
+      usage              → contagem de tokens/custo reais
+      done               → fim, com a resposta completa
+      error              → falha honesta (nada de resposta inventada)
+    """
+    messages = list(body.messages)
+    mcp_defs, mcp_routing = await _build_mcp_tools(body.mcp_servers) if body.mcp_servers else ([], {})
+    tools = TOOLS + mcp_defs
+    # ferramentas de PC só entram se existe um Agente Local pareado pra executar
+    if body.agent_id:
+        tools = tools + PC_TOOLS
+
+    answer = ""
+    usage: dict = {}
+    step_index = 0
+    files: list[str] = []
+
+    try:
+        for _ in range(max(1, body.max_steps)):
+            text_parts: list[str] = []
+            calls: list[dict] = []
+
+            async for ev in chat_stream(messages, key=key, model=body.model, tools=tools):
+                kind = ev.get("type")
+                if kind == "token":
+                    text_parts.append(ev["text"])
+                    answer += ev["text"]
+                    yield _ndjson("token", text=ev["text"])
+                elif kind == "tool_calls":
+                    calls = ev["calls"]
+                elif kind == "usage":
+                    usage = {k: v for k, v in ev.items() if k != "type"}
+
+            if not calls:
+                break
+
+            # o modelo pediu ferramentas: registra a mensagem dele e executa
+            messages.append({
+                "role": "assistant",
+                "content": "".join(text_parts) or None,
+                "tool_calls": [
+                    {"id": c["id"], "type": "function", "function": c["function"]}
+                    for c in calls
+                ],
+            })
+
+            for call in calls:
+                fn = call["function"]["name"]
+                try:
+                    args = json.loads(call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+
+                yield _ndjson("tool", index=step_index, name=fn, label=_label_for(fn))
+
+                if fn.startswith("pc_") and body.agent_id:
+                    # ação de PC: o Agente Local executa e vai reportando progresso
+                    output = ""
+                    async for pev in run_pc_tool(body.agent_id, fn, args):
+                        etype = pev.get("type")
+                        if etype == "file_begin":
+                            files.append(pev["id"])
+                            yield _ndjson("file_begin", **{k: v for k, v in pev.items() if k != "type"})
+                        elif etype == "file_progress":
+                            yield _ndjson("file_progress", **{k: v for k, v in pev.items() if k != "type"})
+                        elif etype == "error":
+                            yield _ndjson("error", message=pev["message"])
+                            output = f"ERRO: {pev['message']}"
+                        elif etype == "output":
+                            output = pev["text"]
+                else:
+                    output = await _run_tool(fn, args, mcp_routing)
+
+                yield _ndjson("step", index=step_index, status="done")
+                step_index += 1
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": output})
+
+        if usage:
+            yield _ndjson("usage", **usage)
+        yield _ndjson("done", answer=answer, files=files)
+
+    except ValueError as exc:            # sem chave do OpenRouter
+        yield _ndjson("error", message=str(exc))
+    except Exception as exc:             # noqa: BLE001 — o painel precisa saber o que falhou
+        yield _ndjson("error", message=f"Falha no agente: {exc}")
+
+
 @router.post("/agent")
 async def agent(
     body: AgentIn,
@@ -115,6 +237,14 @@ async def agent(
     authorization: str | None = Header(default=None),
 ):
     key = resolve_key(x_or_key or authorization)
+
+    if body.stream:
+        return StreamingResponse(
+            _stream_agent(body, key),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     messages = list(body.messages)
     steps: list[dict] = []
     data: dict = {}
