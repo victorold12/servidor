@@ -12,8 +12,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createCommandHandler } from "../src/command-dispatcher.js";
-import { VOICES_DIR } from "../src/voice-config.js";
+// Diretório próprio: escrever config e amostra de voz aqui não toca no do usuário.
+process.env.JARVIS_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-disp-"));
+
+const { createCommandHandler } = await import("../src/command-dispatcher.js");
+const { voicesDir } = await import("../src/voice-config.js");
 
 /** Handler com confirmação que EXPLODE: se for chamada, o teste falha. */
 function handlerSemConfirmacao() {
@@ -61,9 +64,9 @@ test("voice_save_sample grava dentro da pasta do agente e nome sujo é neutraliz
 
   assert.equal(r.ok, true);
   assert.ok(!r.data.saved.name.includes(".."), `nome sanitizado: ${r.data.saved.name}`);
-  const destino = path.join(VOICES_DIR, r.data.saved.name);
+  const destino = path.join(voicesDir(), r.data.saved.name);
   assert.equal(fs.existsSync(destino), true, "ficou na pasta de vozes");
-  assert.ok(path.resolve(destino).startsWith(path.resolve(VOICES_DIR)),
+  assert.ok(path.resolve(destino).startsWith(path.resolve(voicesDir())),
     "e não escapou da pasta");
 
   const lista = await handle({ type: "command", action: "voice_list_samples", args: {} });

@@ -13,9 +13,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const DIR = path.join(os.homedir(), ".jarvis-agente");
-const FILE = path.join(DIR, "voice.json");
-export const VOICES_DIR = path.join(DIR, "voices");
+/**
+ * Diretório base do agente. Resolvido a cada chamada, e não uma vez no topo do
+ * módulo, porque JARVIS_AGENT_DIR precisa poder apontar pra outro lugar — sem
+ * isso, rodar a suíte de testes sobrescreveria a configuração de voz real do
+ * usuário em ~/.jarvis-agente.
+ */
+function baseDir() {
+  return process.env.JARVIS_AGENT_DIR || path.join(os.homedir(), ".jarvis-agente");
+}
+function configFile() { return path.join(baseDir(), "voice.json"); }
+export function voicesDir() { return path.join(baseDir(), "voices"); }
 
 /** Motores possíveis. `navegador` existe pro caso de não haver nada local. */
 export const ENGINES = ["chatterbox", "kokoro", "navegador"];
@@ -84,26 +92,26 @@ export function sanitize(entrada = {}) {
 
 export function loadVoiceConfig() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, "utf8")) };
+    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(configFile(), "utf8")) };
   } catch {
     return { ...DEFAULTS };
   }
 }
 
 export function saveVoiceConfig(cfg) {
-  fs.mkdirSync(DIR, { recursive: true });
+  fs.mkdirSync(baseDir(), { recursive: true });
   const limpo = sanitize(cfg);
-  fs.writeFileSync(FILE, JSON.stringify(limpo, null, 2), { mode: 0o600 });
+  fs.writeFileSync(configFile(), JSON.stringify(limpo, null, 2), { mode: 0o600 });
   return limpo;
 }
 
 /** Amostras de voz que o usuário subiu (as vozes clonáveis do Chatterbox). */
 export function listVoiceSamples() {
   try {
-    return fs.readdirSync(VOICES_DIR)
+    return fs.readdirSync(voicesDir())
       .filter((f) => /\.(wav|mp3|flac|ogg|m4a)$/i.test(f))
       .map((f) => {
-        const st = fs.statSync(path.join(VOICES_DIR, f));
+        const st = fs.statSync(path.join(voicesDir(), f));
         return { name: f, size: st.size, added_at: st.mtimeMs / 1000 };
       })
       .sort((a, b) => b.added_at - a.added_at);
@@ -114,14 +122,14 @@ export function listVoiceSamples() {
 
 export function voiceSamplePath(nome) {
   if (!nome) return null;
-  const p = path.join(VOICES_DIR, path.basename(nome));
+  const p = path.join(voicesDir(), path.basename(nome));
   return fs.existsSync(p) ? p : null;
 }
 
 export function saveVoiceSample(nome, buffer) {
-  fs.mkdirSync(VOICES_DIR, { recursive: true });
+  fs.mkdirSync(voicesDir(), { recursive: true });
   const seguro = path.basename(String(nome || "voz.wav")).replace(/[^\w.\-]/g, "_");
-  const destino = path.join(VOICES_DIR, seguro);
+  const destino = path.join(voicesDir(), seguro);
   fs.writeFileSync(destino, buffer, { mode: 0o600 });
   return { name: seguro, size: buffer.length };
 }

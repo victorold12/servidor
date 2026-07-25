@@ -19,9 +19,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { sanitize, DEFAULTS, RANGES, ENGINES } from "../src/voice-config.js";
-import { speak, probe } from "../src/tts.js";
-import { detectWakeWord, parseTranscript, transcribe, checkSetup, MODELS } from "../src/stt.js";
+// Redireciona o diretório do agente ANTES de qualquer leitura: sem isto o teste
+// leria (e sobrescreveria) a configuração de voz real em ~/.jarvis-agente.
+process.env.JARVIS_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-voz-"));
+
+const { sanitize, DEFAULTS, RANGES, ENGINES } = await import("../src/voice-config.js");
+const { speak, probe } = await import("../src/tts.js");
+const { detectWakeWord, parseTranscript, transcribe, checkSetup, MODELS } = await import("../src/stt.js");
 
 // ------------------------------------------------------------ calibração
 test("sanitize prende a calibração na faixa em vez de passar valor cru", () => {
@@ -196,7 +200,6 @@ test("transcribe sem arquivo e sem modelo devolve motivo, não exceção", async
 });
 
 test("o modelo padrão é base, não large (Seção 9 — RAM)", () => {
-  const { DEFAULTS: D } = { DEFAULTS: checkSetup() };
   assert.equal(checkSetup().model, "base");
   assert.ok(MODELS.includes("large-v3"), "large existe como opção, só não é o padrão");
 });

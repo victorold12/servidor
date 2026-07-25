@@ -13,24 +13,31 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const DIR = path.join(os.homedir(), ".jarvis-agente");
-const FILE = path.join(DIR, "stt.json");
+// Mesmo motivo do voice-config.js: resolvido a cada chamada pra
+// JARVIS_AGENT_DIR poder redirecionar e o teste não mexer no config real.
+function baseDir() {
+  return process.env.JARVIS_AGENT_DIR || path.join(os.homedir(), ".jarvis-agente");
+}
+function configFile() { return path.join(baseDir(), "stt.json"); }
 
 export const MODELS = ["tiny", "base", "small", "medium", "large-v3"];
 
-export const DEFAULTS = {
-  binary: "whisper-cli",        // ou o caminho completo do main/whisper-cli
-  model: "base",                // Seção 9: base por padrão, por causa da RAM
-  modelsDir: path.join(DIR, "whisper-models"),
-  language: "pt",
-  threads: Math.max(2, Math.min(8, os.cpus().length)),
-};
+function defaults() {
+  return {
+    binary: "whisper-cli",        // ou o caminho completo do main/whisper-cli
+    model: "base",                // Seção 9: base por padrão, por causa da RAM
+    modelsDir: path.join(baseDir(), "whisper-models"),
+    language: "pt",
+    threads: Math.max(2, Math.min(8, os.cpus().length)),
+  };
+}
+export { defaults as DEFAULTS_FN };
 
 export function loadSttConfig() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, "utf8")) };
+    return { ...defaults(), ...JSON.parse(fs.readFileSync(configFile(), "utf8")) };
   } catch {
-    return { ...DEFAULTS };
+    return defaults();
   }
 }
 
@@ -44,8 +51,8 @@ export function saveSttConfig(entrada = {}) {
   const t = Number(entrada.threads);
   if (Number.isFinite(t)) out.threads = Math.max(1, Math.min(32, Math.floor(t)));
 
-  fs.mkdirSync(DIR, { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(out, null, 2), { mode: 0o600 });
+  fs.mkdirSync(baseDir(), { recursive: true });
+  fs.writeFileSync(configFile(), JSON.stringify(out, null, 2), { mode: 0o600 });
   return out;
 }
 
