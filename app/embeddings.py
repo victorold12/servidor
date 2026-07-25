@@ -27,9 +27,23 @@ from .config import settings
 LEXICAL_MODEL = "lexico"          # marcador de "não é vetor de embedding"
 
 
+def base_url() -> str:
+    """Endpoint de embeddings.
+
+    Se EMBEDDINGS_BASE não estiver definido mas houver um Ollama configurado,
+    usa o Ollama: ele serve embeddings no mesmo endpoint compatível com a OpenAI
+    que já usamos pro chat. Assim quem já tem Ollama só precisa dizer o MODELO
+    (ex.: nomic-embed-text), sem repetir a URL.
+    """
+    base = getattr(settings, "embeddings_base", "") or getattr(settings, "ollama_base", "")
+    return base.rstrip("/") if base else ""
+
+
 def configured() -> bool:
-    return bool(getattr(settings, "embeddings_base", "") and
-                getattr(settings, "embeddings_model", ""))
+    """Só é "configurado" com URL E modelo. Sem o modelo não há o que chamar, e
+    adivinhar um nome faria a busca falhar com erro obscuro em vez de dizer que
+    falta configuração."""
+    return bool(base_url() and getattr(settings, "embeddings_model", ""))
 
 
 def pack(vector: list[float]) -> bytes:
@@ -63,7 +77,7 @@ async def embed(texts: list[str]) -> tuple[list[list[float]], str]:
     if getattr(settings, "embeddings_key", ""):
         headers["Authorization"] = f"Bearer {settings.embeddings_key}"
 
-    base = settings.embeddings_base.rstrip("/")
+    base = base_url()
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         resp = await client.post(
             f"{base}/embeddings",

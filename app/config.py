@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/api/connectors/google/callback"
     replicate_api_key: str = ""
 
+    # Rate limit por IP. Generoso porque é single-user e uma interação do painel
+    # já faz várias chamadas; ver o comentário em security.py.
+    rate_limit: int = 600
+    rate_window: float = 300.0
+
     # Discord/Telegram (Seção 5). Sem MESSAGING_SECRET o webhook fica desligado;
     # sem allowlist, ele recusa tudo — negar é o padrão seguro aqui.
     messaging_secret: str = ""

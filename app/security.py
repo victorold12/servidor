@@ -28,19 +28,34 @@ def require_token(x_backend_token: str | None = Header(default=None)):
 
 
 # ---------------- Rate limit (janela fixa, em memória, por IP) ----------------
+#
+# Pra que serve: o backend pode ficar público (Render), e quem protege é o
+# BACKEND_TOKEN. O limite aqui é a segunda linha — segura abuso se o token
+# vazar ou não estiver configurado, e segura um laço maluco do próprio app.
+#
+# Por que o padrão é generoso: isto é single-user, e UMA interação do painel já
+# faz várias chamadas (catálogo, agente, extração de fato, camada diária, busca).
+# Com o antigo 30/5min (6 por minuto) o uso normal batia no teto — a suíte de
+# testes batia sozinha. 600/5min ainda é um teto real contra abuso e é invisível
+# pra quem está só usando.
+#
+# Configurável no .env: RATE_LIMIT e RATE_WINDOW.
 _hits: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT = 30      # requisições
-RATE_WINDOW = 300.0  # por 5 minutos, por IP
 
 
 def rate_limit(request: Request):
     ip = request.client.host if request.client else "unknown"
+    limite = max(1, int(settings.rate_limit))
+    janela = max(1.0, float(settings.rate_window))
     now = time.time()
     hits = _hits[ip]
-    while hits and hits[0] < now - RATE_WINDOW:
+    while hits and hits[0] < now - janela:
         hits.pop(0)
-    if len(hits) >= RATE_LIMIT:
-        raise HTTPException(status_code=429, detail="Muitas requisições — aguarde alguns minutos.")
+    if len(hits) >= limite:
+        raise HTTPException(
+            status_code=429,
+            detail=(f"Muitas requisições ({limite} em {int(janela)}s). "
+                    f"Aguarde, ou suba RATE_LIMIT no .env."))
     hits.append(now)
 
 
