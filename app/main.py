@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import settings
-from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video
+from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video, voice
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -61,6 +61,7 @@ app.include_router(memory.router, prefix="/api", tags=["memory"], dependencies=p
 app.include_router(catalog.router, prefix="/api", tags=["catalog"], dependencies=protected)
 app.include_router(analytics.router, prefix="/api", tags=["analytics"], dependencies=protected)
 app.include_router(backup.router, prefix="/api", tags=["backup"], dependencies=protected)
+app.include_router(voice.router, prefix="/api", tags=["voice"], dependencies=protected)
 # Webhook é chamado por Discord/Telegram, que não têm o token de sessão. A trava
 # aqui é outra: segredo no caminho da URL + allowlist de quem pode mandar comando
 # (ver routers/messaging.py). Rate limit continua valendo.
