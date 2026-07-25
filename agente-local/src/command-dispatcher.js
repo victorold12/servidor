@@ -14,6 +14,14 @@
  */
 import { runCommand, runFileOp } from "./safe-exec.js";
 import { recordAudit } from "./audit.js";
+import { probeAll, speak } from "./tts.js";
+import {
+  checkSetup, detectWakeWord, loadSttConfig, MODELS, saveSttConfig, transcribe,
+} from "./stt.js";
+import {
+  deleteVoiceSample, ENGINES, listVoiceSamples, loadVoiceConfig, RANGES,
+  saveVoiceConfig, saveVoiceSample,
+} from "./voice-config.js";
 
 const FS_ACTIONS = new Set(["fs_read", "fs_list", "fs_write", "fs_mkdir", "fs_delete"]);
 
@@ -74,6 +82,92 @@ export function createCommandHandler({ getAllowedRoots, confirmFn, sendAudit, is
       };
     }
 
+    // ---- voz (Seção 14) ----
+    // Não passa pelo gate de tier: falar, transcrever e ajustar a própria voz não
+    // toca em arquivo do usuário nem executa programa. É a mesma razão pela qual
+    // "chat" não pede confirmação. Escrever amostra de voz fica dentro da pasta
+    // do agente (~/.jarvis-agente/voices), fora das allowed_roots.
+    if (VOICE_ACTIONS.has(action)) {
+      return handleVoice(action, msg.args || {});
+    }
+
     return { ok: false, data: { error: `ação desconhecida: ${action}` } };
   };
 }
+
+const VOICE_ACTIONS = new Set([
+  "voice_status", "voice_config_get", "voice_config_set",
+  "voice_list_samples", "voice_save_sample", "voice_delete_sample",
+  "tts_speak", "stt_transcribe", "stt_config_get", "stt_config_set",
+]);
+
+async function handleVoice(action, args) {
+  try {
+    switch (action) {
+      case "voice_status": {
+        const [motores, cfg] = [await probeAll(), loadVoiceConfig()];
+        return { ok: true, data: {
+          engines: motores,
+          config: cfg,
+          samples: listVoiceSamples(),
+          stt: checkSetup(),
+          ranges: RANGES,
+          engines_disponiveis: ENGINES,
+          stt_models: MODELS,
+        } };
+      }
+      case "voice_config_get":
+        return { ok: true, data: { config: loadVoiceConfig(), ranges: RANGES } };
+      case "voice_config_set":
+        // saveVoiceConfig sanitiza: valor fora da faixa é preso no limite
+        return { ok: true, data: { config: saveVoiceConfig(args) } };
+
+      case "voice_list_samples":
+        return { ok: true, data: { samples: listVoiceSamples() } };
+      case "voice_save_sample": {
+        // O áudio chega em base64 pelo WS. O agente é sempre cliente (Seção 8),
+        // então é assim que um arquivo desce até ele — nunca abrindo porta.
+        const bruto = String(args.data_base64 || "");
+        if (!bruto) return { ok: false, data: { error: "sem data_base64" } };
+        const buf = Buffer.from(bruto, "base64");
+        if (!buf.length) return { ok: false, data: { error: "base64 inválido" } };
+        if (buf.length > MAX_SAMPLE_BYTES) {
+          return { ok: false, data: {
+            error: `amostra grande demais (${buf.length} bytes, máx ${MAX_SAMPLE_BYTES})` } };
+        }
+        return { ok: true, data: { saved: saveVoiceSample(args.name, buf) } };
+      }
+      case "voice_delete_sample":
+        return { ok: true, data: { deleted: deleteVoiceSample(args.name) } };
+
+      case "tts_speak": {
+        const r = await speak(args.text, args.overrides || {});
+        if (!r.ok) return { ok: false, data: r };
+        // áudio volta em base64 pelo mesmo caminho do WS
+        return { ok: true, data: {
+          engine: r.engine, fallback: r.fallback, mime: r.mime, bytes: r.bytes,
+          audio_base64: r.audio.toString("base64"),
+        } };
+      }
+
+      case "stt_config_get":
+        return { ok: true, data: { config: loadSttConfig(), setup: checkSetup(), models: MODELS } };
+      case "stt_config_set":
+        return { ok: true, data: { config: saveSttConfig(args) } };
+      case "stt_transcribe": {
+        const r = await transcribe(args.path, args.overrides || {});
+        if (!r.ok) return { ok: false, data: r };
+        return { ok: true, data: { text: r.text, model: r.model,
+                                   wake: detectWakeWord(r.text) } };
+      }
+      default:
+        return { ok: false, data: { error: `ação de voz desconhecida: ${action}` } };
+    }
+  } catch (err) {
+    return { ok: false, data: { error: String(err?.message || err) } };
+  }
+}
+
+// Amostra de referência de voz são poucos segundos. Teto evita alguém empurrar
+// um arquivo enorme pelo WebSocket.
+const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
