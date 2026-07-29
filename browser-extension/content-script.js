@@ -62,13 +62,20 @@ function fillForm(profile) {
   return { filled };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.action === "extract") {
-    sendResponse(extractPage());
-  } else if (msg?.action === "getSelection") {
-    sendResponse({ text: getSelectionText() });
-  } else if (msg?.action === "fillForm") {
-    sendResponse(fillForm(msg.profile || {}));
-  }
-  return false; // resposta síncrona — sem canal assíncrono aberto
-});
+/* Este arquivo não vem mais do manifest: o popup o injeta na aba atual toda vez
+ * que você pede algo (popup.js). Abrir o popup duas vezes injeta duas vezes, e
+ * sem esta marca haveria dois listeners respondendo à mesma mensagem. */
+if (!window.__jarvisContentScript) {
+  window.__jarvisContentScript = true;
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.action === "extract") {
+      sendResponse(extractPage());
+    } else if (msg?.action === "getSelection") {
+      sendResponse({ text: getSelectionText() });
+    } else if (msg?.action === "fillForm") {
+      sendResponse(fillForm(msg.profile || {}));
+    }
+    return false; // resposta síncrona — sem canal assíncrono aberto
+  });
+}

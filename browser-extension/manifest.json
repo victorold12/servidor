@@ -3,18 +3,19 @@
   "name": "JARVIS Assistant",
   "version": "0.1.0",
   "description": "Controla o navegador para o JARVIS: pesquisa, extrai dados de página, preenche formulário. Fala direto com o backend do JARVIS (Seção 6 do esquema de arquitetura).",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
-  "host_permissions": ["<all_urls>"],
+  "_comentario_permissoes": [
+    "activeTab + scripting, sem host_permissions e sem content_scripts automatico.",
+    "Antes era <all_urls> nos dois: a extensao ficava injetada em TODA pagina do",
+    "navegador o tempo todo — banco, e-mail, tudo — mesmo sem nunca ser usada.",
+    "Um furo na extensao valia para a sessao inteira da pessoa.",
+    "Agora o content-script e injetado sob demanda (popup.js), e activeTab so da",
+    "acesso a aba atual depois de um clique no icone. Se a extensao for",
+    "comprometida, o alcance e a aba que voce escolheu abrir, naquele momento."
+  ],
+  "permissions": ["activeTab", "scripting", "storage"],
   "background": {
     "service_worker": "service-worker.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
-      "run_at": "document_end"
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "JARVIS Assistant",

@@ -20,6 +20,26 @@ async function activeTab() {
   return tab;
 }
 
+/* O content-script não é mais injetado em toda página pelo manifest — ele entra
+ * aqui, na aba que você está vendo, no momento em que você pede. É o que faz a
+ * extensão precisar só de activeTab em vez de <all_urls>.
+ *
+ * Injetar de novo numa aba que já tem é inofensivo: o content-script marca
+ * presença numa flag e não registra o listener duas vezes. */
+async function injetaContentScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
+  } catch (err) {
+    /* Páginas internas do navegador (chrome://, a loja de extensões, PDF viewer)
+       recusam injeção por política do próprio Chrome — nenhuma extensão entra
+       ali. Dizer isso é mais útil que repassar "Cannot access contents of url". */
+    throw new Error(
+      "Não consigo ler esta aba. Páginas internas do navegador (chrome://, loja " +
+      "de extensões) são bloqueadas pelo Chrome. Abra um site normal e tente de novo."
+    );
+  }
+}
+
 function sendToTab(tabId, message) {
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, (response) => {
@@ -27,6 +47,12 @@ function sendToTab(tabId, message) {
       else resolve(response);
     });
   });
+}
+
+/* Um só caminho pra falar com a página: injeta, depois manda. */
+async function pedeAPagina(tabId, message) {
+  await injetaContentScript(tabId);
+  return sendToTab(tabId, message);
 }
 
 async function backendFetch(cfg, path, body) {
@@ -69,7 +95,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     box.textContent = "Extraindo…";
     try {
       const tab = await activeTab();
-      const data = await sendToTab(tab.id, { action: "extract" });
+      const data = await pedeAPagina(tab.id, { action: "extract" });
       box.textContent = `${data.title}\n${data.url}\n\n${data.text.slice(0, 3000)}`;
     } catch (e) {
       box.textContent = "Erro: " + e.message + " (a página precisa estar carregada e não ser uma aba interna do navegador)";
@@ -81,7 +107,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     box.style.display = "block";
     try {
       const tab = await activeTab();
-      const data = await sendToTab(tab.id, { action: "getSelection" });
+      const data = await pedeAPagina(tab.id, { action: "getSelection" });
       box.textContent = data.text || "(nada selecionado na página)";
     } catch (e) {
       box.textContent = "Erro: " + e.message;
@@ -126,7 +152,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setStatus(statusEl, "Preenchendo…");
     try {
       const tab = await activeTab();
-      const data = await sendToTab(tab.id, { action: "fillForm", profile });
+      const data = await pedeAPagina(tab.id, { action: "fillForm", profile });
       setStatus(statusEl, `${data.filled} campo(s) preenchido(s).`, data.filled ? "ok" : "err");
     } catch (e) {
       setStatus(statusEl, "Erro: " + e.message, "err");
