@@ -122,3 +122,43 @@ jobs:
             exit 1
           fi
           echo "sem CDN além do Firebase"
+
+      # O login com Google monta um iframe no authDomain do Firebase. Se o CSP
+      # não liberar exatamente esse domínio, o login quebra CALADO: a janela do
+      # Google abre e nada acontece depois. Já aconteceu. Como o domínio está
+      # escrito em dois lugares (FIREBASE_CONFIG e o CSP), eles precisam bater.
+      - name: authDomain do Firebase está liberado no CSP
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        # python em vez de grep porque o comentário acima do CSP também fala de
+        # frame-src: um grep solto casaria com ele e o teste passaria com a
+        # política errada. Aqui só o content= da meta tag entra na conta.
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          js = open('src/js/12-menus.js', encoding='utf-8').read()
+          html = open('index.html', encoding='utf-8').read()
+
+          m = re.search(r'authDomain:\s*"([^"]+)"', js)
+          if not m:
+              sys.exit('::error::não achei authDomain em src/js/12-menus.js')
+          dominio = m.group(1)
+
+          sem_comentario = re.sub(r'<!--.*?-->', '', html, flags=re.S)
+          # Fecha na aspa DUPLA de propósito: o valor do CSP contém 'self',
+          # e uma classe [\"'] terminaria a captura na primeira aspa simples,
+          # deixando a política com uma diretiva só.
+          meta = re.search(r'http-equiv="Content-Security-Policy"[^>]*content="(.*?)"',
+                           sem_comentario, re.S | re.I)
+          if not meta:
+              sys.exit('::error::não achei a meta tag de Content-Security-Policy no index.html')
+          politica = {p.split()[0]: p for p in
+                      (x.strip() for x in meta.group(1).split(';')) if p}
+
+          for diretiva in ('frame-src', 'form-action'):
+              valor = politica.get(diretiva, '')
+              if dominio not in valor:
+                  sys.exit(f'::error::{diretiva} do CSP não libera {dominio} — '
+                           f'o login do Google falha em silêncio. Valor atual: {valor or "(ausente)"}')
+          print(f'CSP libera {dominio} em frame-src e form-action')
+          PY
