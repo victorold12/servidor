@@ -12,6 +12,8 @@
  * As ações fs_* usam classifyPath (sandbox por caminho) em vez de allowlist de
  * comando — cobrem criar/ler/listar/apagar sem passar por shell (Seção 4/9).
  */
+import os from "node:os";
+import { execFile } from "node:child_process";
 import { runCommand, runFileOp } from "./safe-exec.js";
 import { recordAudit } from "./audit.js";
 import { probeAll, speak } from "./tts.js";
@@ -128,8 +130,50 @@ export function createCommandHandler({ getAllowedRoots, confirmFn, sendAudit, is
       return { ok: result.ok, data: { stdout: result.stdout, stderr: result.stderr, error: result.error } };
     }
 
+    /* Leitura de contadores do próprio SO: não toca arquivo, não sai na rede,
+       não tem o que confirmar. Fica FORA do gate de propósito. */
+    if (action === "sys_metrics") {
+      return { ok: true, data: metricasDoSistema() };
+    }
+
+    /* Abrir link no navegador. Passa pela confirmação local (Tier 2) quando o
+       usuário não liberou antes: abrir página é barato pra quem pede e caro pra
+       quem recebe — um link pode ser phishing, download, ou só invadir a tela
+       de quem está no meio de outra coisa. A URL é validada ANTES de qualquer
+       pergunta, pra não confirmar algo que ia falhar de todo jeito. */
+    if (action === "open_url") {
+      const url = urlSegura(msg.args?.url);
+      const auditBase = { action_type: "open_url", target: String(msg.args?.url || ""),
+                          tier: 2, ts: Date.now() / 1000, ...provenance };
+      if (!url) {
+        const erro = "só abro links http:// e https://";
+        recordAudit({ entry: { ...auditBase, decision: "denied", result: `error:${erro}` },
+                      sendToHub: sendAudit, filePath: auditFilePath });
+        return { ok: false, data: { error: erro } };
+      }
+      const chave = `open_url:${new URL(url).origin}`;   // libera por SITE, não por link
+      let decisao = alwaysCache.has(chave) ? "always" : null;
+      if (!decisao) {
+        decisao = await confirmFn({ command: `ABRIR ${url}`, reason: "abrir link no navegador",
+                                    tier: 2, tierLabel: "confirmar", provenance });
+        if (decisao === "always") alwaysCache.add(chave);
+      }
+      if (decisao === "deny") {
+        recordAudit({ entry: { ...auditBase, decision: "deny", result: "error:negado no PC" },
+                      sendToHub: sendAudit, filePath: auditFilePath });
+        return { ok: false, data: { error: "você negou no PC" } };
+      }
+      const { file, args } = abridorDoSistema(url);
+      const erro = await new Promise((resolve) =>
+        execFile(file, args, { shell: false, timeout: 10000, windowsHide: true },
+                 (err) => resolve(err ? String(err.message).slice(0, 200) : null)));
+      recordAudit({ entry: { ...auditBase, decision: decisao, result: erro ? `error:${erro}` : "ok" },
+                    sendToHub: sendAudit, filePath: auditFilePath });
+      return erro ? { ok: false, data: { error: erro } } : { ok: true, data: { aberto: url } };
+    }
+
     if (FS_ACTIONS.has(action)) {
-      const op = action.slice(3); // "read" | "list" | "write" | "mkdir" | "delete"
+      const op = action.slice(3); // "read" | "list" | "write" | "mkdir" | "delete" | "organize"
       const result = await runFileOp({
         op,
         path: String(msg.args?.path || ""),

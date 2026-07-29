@@ -105,6 +105,53 @@ PC_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "pc_organizar_pasta",
+            "description": (
+                "Arruma UMA pasta do PC movendo os arquivos para subpastas por tipo "
+                "(Documentos, Imagens, Videos, Audio, Planilhas, Slides, Compactados, "
+                "Programas, Codigo). Não entra em subpastas, não apaga nada e não "
+                "sobrescreve: nome repetido vira 'arquivo (2).pdf'. Arquivo de extensão "
+                "desconhecida fica onde está. Devolve o relatório do que foi movido."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string",
+                                        "description": "A pasta a arrumar, ex.: 'C:/Users/voce/Downloads'."}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pc_metricas",
+            "description": (
+                "Uso de CPU e memória do PC do usuário agora, mais modelo do "
+                "processador, tempo ligado e plataforma. Só leitura, não altera nada."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pc_abrir_link",
+            "description": (
+                "Abre um endereço no navegador padrão do PC do usuário. Só http e https. "
+                "Use para pesquisa também, montando a URL de busca (ex.: YouTube: "
+                "https://www.youtube.com/results?search_query=TERMO). O usuário confirma "
+                "no PC antes de abrir."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "description": "Endereço completo, com https://."}},
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 PC_TOOL_LABEL = {
@@ -114,6 +161,9 @@ PC_TOOL_LABEL = {
     "pc_make_dir": "Criando pasta",
     "pc_delete": "Apagando (aguardando sua confirmação no PC)",
     "pc_run": "Executando no PC",
+    "pc_organizar_pasta": "Organizando a pasta por tipo de arquivo",
+    "pc_metricas": "Lendo CPU e memória do PC",
+    "pc_abrir_link": "Abrindo no navegador (aguardando sua confirmação no PC)",
 }
 
 # ferramenta -> ação que o Agente Local entende
@@ -124,6 +174,9 @@ _ACTION = {
     "pc_make_dir": "fs_mkdir",
     "pc_delete": "fs_delete",
     "pc_run": "run",
+    "pc_organizar_pasta": "fs_organize",
+    "pc_metricas": "sys_metrics",
+    "pc_abrir_link": "open_url",
 }
 
 

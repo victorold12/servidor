@@ -162,7 +162,22 @@ test("close com outro code reconecta, com backoff crescente entre tentativas", a
   sock._serverClose(1006); // falha de novo, imediatamente
   const second = events.filter((e) => e.type === "reconnecting")[1];
   assert.equal(second.attempt, 2);
-  assert.ok(second.inMs > first.inMs * 1.3, `backoff devia crescer: ${first.inMs} -> ${second.inMs}`);
+
+  /* Cada tentativa é `1000 * 2^(n-1)` com jitter de ±25%, então cada uma tem uma
+     FAIXA. Conferir a faixa testa o contrato de verdade (dobra a cada tentativa,
+     com jitter limitado) e não depende de sorteio.
+
+     A asserção anterior era `second > first * 1.3` e falhava de vez em quando
+     por construção: no pior sorteio, first cai em 1,25x e second em 1,50x, e
+     1,50 não passa de 1,25 x 1,3 = 1,625. Foi assim que ela derrubou o CI com
+     1214 -> 1570 (o limite era 1578). Erro do teste, não do backoff. */
+  const naFaixa = (ms, tentativa) => {
+    const base = 1000 * 2 ** (tentativa - 1);
+    return ms >= base * 0.75 && ms <= base * 1.25;
+  };
+  assert.ok(naFaixa(first.inMs, 1), `1ª tentativa fora da faixa 750–1250ms: ${first.inMs}`);
+  assert.ok(naFaixa(second.inMs, 2), `2ª tentativa fora da faixa 1500–2500ms: ${second.inMs}`);
+  assert.ok(second.inMs > first.inMs, `a 2ª espera tem que ser maior: ${first.inMs} -> ${second.inMs}`);
   conn.close();
 });
 
