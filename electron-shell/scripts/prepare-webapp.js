@@ -56,4 +56,19 @@ for (const f of FILES) {
   fs.copyFileSync(src, path.join(DEST, f));
 }
 
-console.log(`Web App copiada de ${SOURCE} -> ${DEST} (${FILES.join(", ")})`);
+/* vendor/ = marked, DOMPurify, xlsx, jspdf, docx, pptxgenjs, html2canvas.
+   Desde que sairam do cdnjs, sao arquivos LOCAIS: sem eles o app instalado abre
+   com a interface montada e sem markdown nem exportacao — uma falha que so
+   aparece quando o usuario tenta usar, o pior momento pra descobrir. Por isso
+   aborta aqui em vez de empacotar um app pela metade. */
+const VENDOR_SRC = path.join(SOURCE, "vendor");
+if (!fs.existsSync(VENDOR_SRC) || fs.readdirSync(VENDOR_SRC).length === 0) {
+  console.error(
+    `Falta ${VENDOR_SRC}. Rode "npm install && npm run build" no VTz-painel — ` +
+    `o build e quem copia as bibliotecas do node_modules pra vendor/.`);
+  process.exit(1);
+}
+fs.cpSync(VENDOR_SRC, path.join(DEST, "vendor"), { recursive: true });
+const nVendor = fs.readdirSync(VENDOR_SRC).length;
+
+console.log(`Web App copiada de ${SOURCE} -> ${DEST} (${FILES.join(", ")} + vendor/ com ${nVendor} libs)`);

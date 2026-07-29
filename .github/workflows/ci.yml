@@ -87,9 +87,38 @@ jobs:
         working-directory: VTz-painel
         if: hashFiles('VTz-painel/package.json') != ''
         run: |
-          if ! git diff --quiet -- app.js style.css; then
-            echo "::error::app.js/style.css commitados diferem do build de src/. Rode 'npm run build' e commite."
-            git diff --stat -- app.js style.css
+          # vendor/ entra na conta: é copiado do node_modules pelo build, com
+          # versão travada no package.json. Se o commitado divergir, o site vai
+          # pro ar com uma biblioteca de outra versão da que foi testada.
+          if ! git diff --quiet -- app.js style.css vendor; then
+            echo "::error::app.js/style.css/vendor commitados diferem do build de src/. Rode 'npm run build' e commite."
+            git diff --stat -- app.js style.css vendor
             exit 1
           fi
           echo "bundle em dia"
+
+      # As bibliotecas saíram do CDN pro repo justamente pra o app abrir sem
+      # internet. Um vendor/ vazio passaria em tudo acima e só falharia na mão
+      # do usuário, sem markdown e sem exportação.
+      - name: vendor/ tem as bibliotecas
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          faltou=0
+          for f in marked.min.js purify.min.js xlsx.full.min.js jspdf.umd.min.js \
+                   docx.umd.min.js pptxgen.bundle.js html2canvas.min.js; do
+            if [ ! -s "vendor/$f" ]; then echo "::error::vendor/$f ausente ou vazio"; faltou=1; fi
+          done
+          exit $faltou
+
+      # index.html não pode voltar a depender de CDN pra funcionalidade básica.
+      # gstatic (Firebase) é a exceção consciente: sync na nuvem exige rede.
+      - name: index.html não busca script de CDN
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          if grep -n 'src="https://' index.html | grep -v 'gstatic.com'; then
+            echo "::error::script remoto no index.html — traga pro vendor/ (veja scripts/build.js)"
+            exit 1
+          fi
+          echo "sem CDN além do Firebase"
