@@ -55,6 +55,7 @@
 <script src="vendor/pptxgen.bundle.js"></script>
 <!-- Rasteriza mirrors HTML pro loop de QA visual (skills de pdf/docx/pptx/dashboard-html) -->
 <script src="vendor/html2canvas.min.js"></script>
+<script src="vendor/qrcode.min.js"></script>
 <!-- Firebase (login opcional + sync na nuvem) — SDK compat via CDN -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -480,6 +481,12 @@
           <option value="replace">Substituir tudo pelo arquivo</option>
         </select>
         <p class="hint" id="srv-backup-msg" style="margin-top:8px;"></p>
+      </div>
+      <div class="cfg-group" data-cat="dados">
+        <h3>Abrir no celular</h3>
+        <p class="hint" style="margin-bottom:10px;">O painel é uma página web e o seu PC pareado obedece comandos vindos do backend — então o celular não precisa de aplicativo nenhum: precisa abrir <b>esta mesma página</b>, apontada pro <b>mesmo backend</b>. O QR só evita você digitar endereço e token numa tela de toque.</p>
+        <button id="qr-celular-btn">Mostrar QR</button>
+        <div id="qr-celular" class="qr-celular"></div>
       </div>
       <div class="cfg-group" data-cat="dados">
         <h3>Conversas em todos os aparelhos</h3>
