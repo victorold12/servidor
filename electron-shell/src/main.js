@@ -4,7 +4,7 @@
  * este arquivo só cria janelas e importa aqueles módulos, sem reimplementar
  * nada. Ver ../agente-local/README.md pra saber o que cada peça faz.
  */
-import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -117,6 +117,8 @@ function createMainWindow(pairedBackendUrl) {
     if (permissao === "media" && detalhes?.mediaTypes?.includes("video")) return aceitar(false);
     aceitar(PERMITIDAS.has(permissao));
   });
+
+  trancaNavegacao(mainWindow);
 
   let shown = false;
   const showOnce = () => {
@@ -263,6 +265,49 @@ function createTray() {
 }
 
 /**
+ * A casca do app não é um navegador. Uma janela daqui carrega o preload, que
+ * expõe `window.jarvisDesktop` — a ponte pro processo principal. Se um clique
+ * levar essa janela pra um site qualquer, o site herda a ponte.
+ *
+ * E o clique não precisa ser distraído: a resposta de um modelo é texto que
+ * vira HTML, com links dentro. Basta o modelo escrever um link (ou repetir um
+ * que leu numa página) pra existir um caminho de saída.
+ *
+ * Então: navegação só dentro do próprio app (file://). Qualquer outro destino
+ * — clique normal, target="_blank", window.open — vai pro navegador do sistema,
+ * que é onde site de fora deve abrir de qualquer forma.
+ */
+function trancaNavegacao(win) {
+  const daCasa = (url) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== "file:") return false;
+      // file:// de fora da pasta do app também é "rua" (ex.: um .html baixado).
+      return path.resolve(fileURLToPath(u)).startsWith(path.resolve(SHELL_ROOT, ".."));
+    } catch {
+      return false;
+    }
+  };
+  const abreFora = (url) => {
+    // Só esquemas de navegação. mailto:/tel: passam; file:// e outros, não —
+    // shell.openExternal com file:// abriria arquivo local do PC sem confirmação.
+    if (/^(https?|mailto|tel):/i.test(url)) shell.openExternal(url);
+  };
+
+  win.webContents.on("will-navigate", (evento, url) => {
+    if (daCasa(url)) return;
+    evento.preventDefault();
+    abreFora(url);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    abreFora(url);
+    return { action: "deny" };   // nunca abre uma segunda janela com o preload
+  });
+  // Um <webview> aqui seria outro renderer com outras regras; o app não usa.
+  win.webContents.on("will-attach-webview", (evento) => evento.preventDefault());
+}
+
+/**
  * Se já pareado, devolve a config direto. Senão, abre uma janela pedindo a
  * URL do backend, mostra o código de pareamento (Seção 3) e espera aprovação
  * — reaproveitando pairWithBackend() já testado em pairing.js. A UI aqui é só
@@ -287,6 +332,7 @@ async function runPairingFlow() {
       },
     });
     pairingWindow = win;
+    trancaNavegacao(win);   // também tem preload: mesma regra da janela principal
     win.setMenuBarVisibility(false);
     win.loadFile(path.join(__dirname, "pairing.html")).catch((err) => {
       dialog.showErrorBox("Falha ao abrir o pareamento", err.message);
