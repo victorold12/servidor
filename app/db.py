@@ -5,6 +5,7 @@ Arquivo único, sem serviço externo — mesma filosofia do resto do backend (ze
 infraestrutura extra pra um usuário só). Migra pra Postgres quando precisar de
 multi-dispositivo de verdade; o esquema já é relacional simples de portar.
 """
+import logging
 import os
 import sqlite3
 import time
@@ -14,12 +15,43 @@ from pathlib import Path
 # JARVIS_DB_PATH permite apontar pra um banco isolado (ex.: teste de integração
 # do Agente Local, que sobe este backend de verdade num processo separado e não
 # pode tocar no jarvis.db real). Sem a env var, é o arquivo de sempre.
-_DB_PATH = Path(os.environ.get("JARVIS_DB_PATH") or (Path(__file__).resolve().parent.parent / "jarvis.db"))
-# sqlite3.connect não cria diretório: apontar pra /var/data/jarvis.db num host
-# onde o disco não foi montado derrubaria o processo no boot com "unable to open
-# database file". Criar aqui faz a mesma configuração servir com e sem disco —
-# sem disco os dados são efêmeros, mas o serviço sobe.
-_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+_PADRAO = Path(__file__).resolve().parent.parent / "jarvis.db"
+_DB_PATH = Path(os.environ.get("JARVIS_DB_PATH") or _PADRAO)
+
+
+def _prepara_pasta(caminho: Path) -> Path:
+    """Garante uma pasta gravável pro banco, e devolve o caminho que vai valer.
+
+    sqlite3.connect não cria diretório, então isto precisa acontecer antes da
+    primeira conexão. O caso que importa: JARVIS_DB_PATH=/var/data/jarvis.db num
+    Render sem disco montado. Criar /var/data ali não é "pasta faltando" — é
+    permissão negada, /var pertence ao root e o processo não é root.
+
+    Antes isso estourava PermissionError na IMPORTAÇÃO do módulo e o serviço
+    morria no boot, com um traceback que não dizia o que fazer. Agora cai pro
+    caminho padrão e grita no log: dado efêmero é ruim, servidor que não sobe é
+    pior — e com o aviso dá pra decidir entre montar um disco ou aceitar.
+    """
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        # mkdir passar não garante escrita (pasta pode ser só-leitura).
+        sonda = caminho.parent / ".escrita-ok"
+        sonda.touch()
+        sonda.unlink()
+        return caminho
+    except OSError as erro:
+        if caminho == _PADRAO:
+            raise                      # sem plano B: o problema é a instalação
+        logging.getLogger("vtz_backend").error(
+            "Não consigo gravar em %s (%s). Usando %s — os dados vão sumir a cada "
+            "restart. Para manter: monte um disco em %s (Render: bloco `disk` no "
+            "render.yaml, exige plano pago) ou tire JARVIS_DB_PATH do ambiente.",
+            caminho.parent, erro.strerror or erro, _PADRAO, caminho.parent)
+        _PADRAO.parent.mkdir(parents=True, exist_ok=True)
+        return _PADRAO
+
+
+_DB_PATH = _prepara_pasta(_DB_PATH)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS paired_agents (

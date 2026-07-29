@@ -28,23 +28,32 @@ services:
       # mesmo valor no painel, em Config > Backend VTz OS > Token de acesso.
       - key: BACKEND_TOKEN
         sync: false
-      # ONDE O BANCO VIVE. Sem isto o SQLite fica dentro do container, e o
-      # container do Render é recriado a cada deploy e a cada vez que o plano
-      # free acorda de hibernar — ou seja, conversa, memória e pareamento
-      # somem sozinhos. Apontar pro disco só resolve junto do bloco `disk`
-      # abaixo, que exige plano pago (o free não aceita disco).
-      - key: JARVIS_DB_PATH
-        value: /var/data/jarvis.db
-      # Snapshots do backup automático no mesmo disco.
-      - key: BACKUP_DIR
-        value: /var/data/backups
-    # Descomente junto com plan: starter (US$7/mês). É o que faz os dados
-    # sobreviverem ao restart. No plano free, deixe comentado E apague as duas
-    # variáveis acima — sem disco, /var/data não existe e o backend não sobe.
-    # disk:
-    #   name: vtz-dados
-    #   mountPath: /var/data
-    #   sizeGB: 1
+    # ONDE O BANCO VIVE
+    #
+    # Do jeito que está: dentro do container. E o container do Render é recriado
+    # a cada deploy e a cada vez que o plano free acorda de hibernar — conversa,
+    # memória e pareamento somem sozinhos. É o preço do plano free, e o backup
+    # automático (BACKUP_EVERY_HOURS) existe justamente por causa disso.
+    #
+    # Pra manter os dados: assine o plano starter e DESCOMENTE OS QUATRO blocos
+    # abaixo de uma vez — disco, plano e as duas variáveis. Eles funcionam como
+    # conjunto: as variáveis sozinhas apontam pra um /var/data que não existe, e
+    # o processo não pode criar (a pasta é do root). Já foi assim, e o deploy
+    # morria com "PermissionError: Permission denied: '/var/data'".
+    #
+    # Hoje o backend não morre mais nesse caso — cai pro caminho de dentro do
+    # container e avisa no log. Mas o certo é não pedir um disco que não existe.
+    #
+    #   plan: starter                    ← troque `plan: free` lá em cima
+    #   disk:
+    #     name: vtz-dados
+    #     mountPath: /var/data
+    #     sizeGB: 1
+    #   envVars (junto dos de cima):
+    #     - key: JARVIS_DB_PATH
+    #       value: /var/data/jarvis.db
+    #     - key: BACKUP_DIR
+    #       value: /var/data/backups
       # Opcional: chaves dos conectores como variaveis (persistem entre restarts).
       # Se preferir, deixe em branco e configure pelo site (aba Conectores).
       # - key: NOTION_TOKEN

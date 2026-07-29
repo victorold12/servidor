@@ -15,6 +15,7 @@ restaurar linhas de outro quebraria a verificação da cadeia).
 import asyncio
 import gzip
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -26,10 +27,26 @@ _FORMAT = "jarvis-autobackup-1"
 
 
 def diretorio() -> Path:
-    """Onde os snapshots ficam. Ao lado do banco por padrão."""
-    if settings.backup_dir:
-        return Path(settings.backup_dir)
-    return Path(db._DB_PATH).resolve().parent / "backups"
+    """Onde os snapshots ficam. Ao lado do banco por padrão.
+
+    BACKUP_DIR sofre do mesmo problema que JARVIS_DB_PATH: apontar pra um disco
+    que não foi montado (/var/data num Render sem plano pago) não dá "pasta
+    faltando", dá permissão negada. Aqui isso derrubaria a rota de backup e a
+    tarefa agendada — então cai pro lado do banco, que db.py já garantiu ser
+    gravável. Melhor snapshot efêmero que backup nenhum.
+    """
+    padrao = Path(db._DB_PATH).resolve().parent / "backups"
+    if not settings.backup_dir:
+        return padrao
+    escolhido = Path(settings.backup_dir)
+    try:
+        escolhido.mkdir(parents=True, exist_ok=True)
+        return escolhido
+    except OSError as erro:
+        logging.getLogger("vtz_backend").error(
+            "BACKUP_DIR=%s não é gravável (%s). Usando %s — os snapshots somem a "
+            "cada restart.", escolhido, erro.strerror or erro, padrao)
+        return padrao
 
 
 def _pacote() -> dict:
