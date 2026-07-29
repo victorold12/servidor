@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout servidor
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: servidor
 
@@ -22,7 +22,7 @@ jobs:
       # build da Web App entra aqui porque quebra de sintaxe no JS só aparece
       # no esbuild — e antes disso só era descoberta empacotando o .msi.
       - name: Checkout VTz-painel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: victorold12/VTz-painel
           ref: ${{ github.ref_name }}
@@ -30,13 +30,13 @@ jobs:
         continue-on-error: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # >=22 pelo WebSocket global nativo, que o Agente Local usa.
           node-version: 22
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 

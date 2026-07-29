@@ -11,19 +11,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout servidor
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: servidor
 
       - name: Checkout VTz-painel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: victorold12/VTz-painel
           ref: claude/portuguese-language-dxcsjr
           path: VTz-painel
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # >=22: o Agente Local usa o WebSocket global nativo do Node, que só
           # é garantido a partir daqui (rodar com 20 quebra createAgentConnection
@@ -31,7 +31,7 @@ jobs:
           node-version: 22
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -86,7 +86,7 @@ jobs:
         run: npm run dist:win
 
       - name: Sobe o .msi (Completo) como artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jarvis-installer
           path: servidor/electron-shell/dist/*.msi
@@ -99,7 +99,7 @@ jobs:
         run: npm run dist:win:agent-only
 
       - name: Sobe o .msi (Agente Local) como artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jarvis-agente-local-installer
           path: servidor/electron-shell/dist-agent-only/*.msi
