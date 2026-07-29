@@ -10,6 +10,42 @@ on:
   pull_request:
 
 jobs:
+  # O .msi é construído em windows-latest, mas este CI roda em ubuntu — então
+  # defeito só-do-Windows ficava invisível aqui e só aparecia 7 minutos depois,
+  # no build do instalador. Aconteceu de verdade: um teste usando os.geteuid(),
+  # que não existe no Windows, derrubou o build #24.
+  #
+  # Este job roda SÓ os testes (sem empacotar nada) e leva ~1min. É a diferença
+  # entre descobrir na hora do push e descobrir na hora de gerar o instalador.
+  testes-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: pip install -r requirements.txt
+      - name: Testes do backend (Windows)
+        shell: bash
+        env:
+          # O runner do Windows entrega stdout em cp1252 e os testes imprimem
+          # "✓"/"—": sem isto eles passam e ainda assim quebram o job com
+          # UnicodeEncodeError na hora de escrever o resultado.
+          PYTHONIOENCODING: utf-8
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+      - name: Testes do Agente Local (Windows)
+        working-directory: agente-local
+        run: npm install && npm test
+
   testes:
     runs-on: ubuntu-latest
     steps:

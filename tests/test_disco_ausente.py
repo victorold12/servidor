@@ -56,10 +56,17 @@ PADRAO = Path(__file__).resolve().parent.parent / "jarvis.db"
 
 print("— o caso do Render: /var/data sem disco montado")
 
-# Como root (containers de CI costumam rodar assim), /var/data seria criável e
-# chmod não adianta: root ignora bits de permissão. /sys recusa mkdir até pra
-# root — mesmo OSError, mesmo caminho de código, sem depender de quem executa.
-alvo = Path("/var/data/jarvis.db") if os.geteuid() != 0 else Path("/sys/vtz-disco-ausente/jarvis.db")
+# Reproduzir "não dá pra criar a pasta" sem depender de permissão: aponta pra
+# dentro de um ARQUIVO. mkdir em <arquivo>/sub falha com ENOTDIR em Linux, macOS
+# e Windows, rodando como root ou não.
+#
+# As tentativas anteriores dependiam do ambiente e quebraram: /var/data é
+# criável por root (e no Windows vira C:\var\data, que existe tranquilo), chmod
+# não segura root, e os.geteuid() nem existe no Windows — foi assim que este
+# teste derrubou o build do MSI, que roda em windows-latest.
+_arquivo = Path(tempfile.mkdtemp()) / "isto-e-um-arquivo"
+_arquivo.write_text("nao sou pasta", encoding="utf-8")
+alvo = _arquivo / "sub" / "jarvis.db"
 print(f"  (alvo do teste: {alvo})")
 
 db, erro = carrega(JARVIS_DB_PATH=str(alvo))

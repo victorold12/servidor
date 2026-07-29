@@ -159,7 +159,46 @@ export async function runCommand(opts) {
   }
 }
 
-const FILE_OPS = new Set(["read", "list", "write", "mkdir", "delete"]);
+const FILE_OPS = new Set(["read", "list", "write", "mkdir", "delete", "organize"]);
+
+/* Categorias do "organizar pasta". Extensão desconhecida NÃO é movida: mexer no
+   que não se reconhece é como o assistente perde a confiança do usuário — ele
+   volta e não acha o arquivo. Fica onde está e entra no relatório. */
+const CATEGORIAS = [
+  ["Documentos", ["pdf","doc","docx","odt","rtf","txt","md","epub"]],
+  ["Planilhas",  ["xls","xlsx","csv","ods","tsv"]],
+  ["Slides",     ["ppt","pptx","odp"]],
+  ["Imagens",    ["jpg","jpeg","png","gif","webp","bmp","svg","heic","avif","tiff","ico"]],
+  ["Videos",     ["mp4","mkv","avi","mov","wmv","webm","m4v","flv"]],
+  ["Audio",      ["mp3","wav","flac","m4a","aac","ogg","wma","opus"]],
+  ["Compactados",["zip","rar","7z","tar","gz","xz","bz2"]],
+  ["Programas",  ["exe","msi","bat","cmd","ps1","sh","appimage","deb","rpm","dmg"]],
+  ["Codigo",     ["js","ts","py","java","c","cpp","cs","go","rs","rb","php","html","css","json","xml","yml","yaml","sql","ipynb"]],
+];
+function categoriaDe(nome) {
+  const ext = nome.includes(".") ? nome.split(".").pop().toLowerCase() : "";
+  if (!ext) return null;
+  const achou = CATEGORIAS.find(([, exts]) => exts.includes(ext));
+  return achou ? achou[0] : null;
+}
+
+/* Nome livre no destino: "nota.pdf" que colide vira "nota (2).pdf".
+   Sobrescrever silenciosamente seria destruir arquivo numa operação que o
+   usuário pediu como ARRUMAR. */
+async function nomeLivre(destDir, nome) {
+  const ponto = nome.lastIndexOf(".");
+  const base = ponto > 0 ? nome.slice(0, ponto) : nome;
+  const ext = ponto > 0 ? nome.slice(ponto) : "";
+  for (let i = 1; i < 500; i++) {
+    const tentativa = i === 1 ? nome : `${base} (${i})${ext}`;
+    try {
+      await fsp.access(path.join(destDir, tentativa));
+    } catch {
+      return tentativa;                       // não existe: pode usar
+    }
+  }
+  throw new Error(`não achei nome livre para ${nome}`);
+}
 
 /**
  * Ação de arquivo estruturada — sem shell, classificada por classifyPath
@@ -199,6 +238,7 @@ export async function runFileOp(opts) {
   }
 
   const mode = op === "read" || op === "list" ? "read" : "write";
+  // organize mexe em vários arquivos de uma vez: classifica como escrita.
   let { tier, reason, canonical } = classifyPath(rawPath, allowedRoots, mode);
 
   // Apagar PASTA é destrutivo (recursivo) — sobe pra confirmação mesmo dentro
@@ -277,7 +317,56 @@ async function execFileOp(op, canonical, content) {
     await fsp.rm(canonical, { recursive: true, force: false });
     return { stdout: `apagado: ${canonical}` };
   }
+  if (op === "organize") return organizarPasta(canonical);
   throw new Error(`op não implementada: ${op}`);
+}
+
+/* Arruma UMA pasta movendo os arquivos pra subpastas por tipo.
+ *
+ * Três regras que definem se isto é útil ou assustador:
+ *
+ *   1. Só o primeiro nível. Não desce em subpasta — "organizar Downloads" não
+ *      pode virar uma varredura no projeto que estava lá dentro.
+ *   2. Nada é apagado nem sobrescrito. Colisão de nome vira "arquivo (2).pdf".
+ *      A operação é MOVER, e mover pode ser desfeito olhando o relatório.
+ *   3. Extensão desconhecida fica onde está. Mexer no que não se reconhece é
+ *      como o usuário volta e não acha o arquivo dele.
+ *
+ * Devolve um relatório do que aconteceu — sem ele, o usuário fica sabendo que
+ * "organizou" e não o quê.
+ */
+async function organizarPasta(canonical) {
+  const st = await fsp.stat(canonical);
+  if (!st.isDirectory()) throw new Error(`não é uma pasta: ${canonical}`);
+
+  const entradas = await fsp.readdir(canonical, { withFileTypes: true });
+  const movidos = {};
+  const ignorados = [];
+  let total = 0;
+
+  for (const e of entradas) {
+    if (total >= MAX_LIST_ENTRIES) break;              // pasta gigante: para e reporta
+    if (e.isDirectory()) continue;                     // regra 1
+    if (!e.isFile()) continue;                         // link/socket: não é nosso caso
+    const categoria = categoriaDe(e.name);
+    if (!categoria) { ignorados.push(e.name); continue; }   // regra 3
+
+    const destDir = path.join(canonical, categoria);
+    await fsp.mkdir(destDir, { recursive: true });
+    const destNome = await nomeLivre(destDir, e.name);      // regra 2
+    await fsp.rename(path.join(canonical, e.name), path.join(destDir, destNome));
+    (movidos[categoria] = movidos[categoria] || []).push(destNome);
+    total += 1;
+  }
+
+  const resumo = Object.entries(movidos)
+    .map(([cat, arqs]) => `${cat}: ${arqs.length}`)
+    .join(", ") || "nada pra mover";
+  return {
+    stdout: JSON.stringify({ pasta: canonical, movidos, ignorados: ignorados.slice(0, 50),
+                             total, resumo }),
+    count: total,
+  };
 }
 
 function fail(decision, tier, baseAudit, error) {

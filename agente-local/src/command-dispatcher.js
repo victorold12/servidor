@@ -27,7 +27,74 @@ import {
   loadConfig as loadListenerConfig, RECORDERS, saveConfig as saveListenerConfig,
 } from "./listener.js";
 
-const FS_ACTIONS = new Set(["fs_read", "fs_list", "fs_write", "fs_mkdir", "fs_delete"]);
+const FS_ACTIONS = new Set(["fs_read", "fs_list", "fs_write", "fs_mkdir", "fs_delete", "fs_organize"]);
+
+/* Uso de CPU e memória. Tier 0 de verdade: só lê contadores do próprio sistema
+   operacional, não toca em arquivo nem em rede, e não dá pra vazar nada com
+   isso. Por isso não passa pelo gate de confirmação — perguntar "posso ver
+   quanta RAM você tem?" a cada atualização deixaria a tela inutilizável. */
+function metricasDoSistema() {
+  const cpus = os.cpus();
+  /* Percentual de CPU exige DOIS retratos: os contadores do SO são acumulados
+     desde o boot, então um retrato sozinho daria a média da vida inteira da
+     máquina — um número que nunca muda e não serve pra nada. */
+  const agora = cpus.map((c) => {
+    const t = c.times;
+    return { ocupado: t.user + t.nice + t.sys + t.irq, total: t.user + t.nice + t.sys + t.irq + t.idle };
+  });
+  let usoCpu = null;
+  if (metricasDoSistema._antes && metricasDoSistema._antes.length === agora.length) {
+    let dOcupado = 0, dTotal = 0;
+    agora.forEach((n, i) => {
+      dOcupado += n.ocupado - metricasDoSistema._antes[i].ocupado;
+      dTotal += n.total - metricasDoSistema._antes[i].total;
+    });
+    if (dTotal > 0) usoCpu = Math.max(0, Math.min(100, (dOcupado / dTotal) * 100));
+  }
+  metricasDoSistema._antes = agora;
+
+  const totalMem = os.totalmem();
+  const livreMem = os.freemem();
+  return {
+    cpu_pct: usoCpu === null ? null : Number(usoCpu.toFixed(1)),
+    cpu_nucleos: cpus.length,
+    cpu_modelo: cpus[0]?.model?.trim() || "",
+    ram_total_bytes: totalMem,
+    ram_usada_bytes: totalMem - livreMem,
+    ram_pct: Number((((totalMem - livreMem) / totalMem) * 100).toFixed(1)),
+    uptime_s: Math.round(os.uptime()),
+    plataforma: `${os.platform()} ${os.release()}`,
+    /* Na primeira chamada não há retrato anterior pra comparar. Dizer isso é
+       melhor que devolver 0% e a pessoa achar que o PC está ocioso. */
+    aviso: usoCpu === null ? "primeira leitura: o percentual de CPU aparece na próxima" : null,
+  };
+}
+
+/* Só http/https. file:// abriria arquivo do PC sem passar pelas roots, e
+   esquemas como javascript: ou ms-settings: viram execução disfarçada de
+   "abrir link". A lista é fechada: o que não está aqui não abre. */
+function urlSegura(bruta) {
+  let u;
+  try {
+    u = new URL(String(bruta || ""));
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  return u.href;
+}
+
+/* Abre no navegador padrão SEM shell — o mesmo princípio do resto do agente.
+   `start`/`open`/`xdg-open` com shell:true interpretaria a URL como linha de
+   comando, e uma URL com & ou | viraria dois comandos. */
+function abridorDoSistema(url) {
+  if (process.platform === "win32") {
+    // rundll32 em vez de `cmd /c start`: nenhum interpretador de comandos no meio.
+    return { file: "rundll32", args: ["url.dll,FileProtocolHandler", url] };
+  }
+  if (process.platform === "darwin") return { file: "open", args: [url] };
+  return { file: "xdg-open", args: [url] };
+}
 
 /**
  * @param {object} deps
