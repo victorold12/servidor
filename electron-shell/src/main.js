@@ -198,11 +198,53 @@ function setupNotificacoes() {
   });
 }
 
+/**
+ * Refaz o pareamento do zero. Existe porque a config salva é definitiva demais:
+ * runPairingFlow() devolve a config existente sem perguntar nada, então um
+ * pareamento feito contra um backend que depois mudou de URL (ou nunca subiu)
+ * deixa o app tentando conectar num endereço morto pra sempre — falhando calado,
+ * com o único sinal sendo o texto da bandeja. Sem isto, a saída era achar e
+ * apagar o arquivo de config na mão.
+ */
+async function reparear() {
+  const escolha = dialog.showMessageBoxSync({
+    type: "question",
+    buttons: ["Parear de novo", "Cancelar"],
+    defaultId: 1,
+    cancelId: 1,
+    title: "Parear de novo",
+    message: "Refazer o pareamento deste PC?",
+    detail: "Apaga a ligação atual com o backend e pede a URL de novo. As suas conversas não são tocadas.",
+  });
+  if (escolha !== 0) return;
+
+  const { clearConfig } = await import(agenteLocalModule("config.js"));
+  const { deleteToken } = await import(agenteLocalModule("token-vault.js"));
+  wsConnection?.close();
+  wsConnection = null;
+  clearConfig();
+  await deleteToken().catch(() => {});   // sem token salvo já é o estado desejado
+
+  try {
+    const cfg = await runPairingFlow();
+    if (cfg) {
+      await connectAgent(cfg);
+      dialog.showMessageBoxSync({ type: "info", title: "Pareado",
+        message: "PC pareado de novo.",
+        detail: `Backend: ${cfg.backendUrl}\n\nRecarregue o painel se a aba Agente Local ainda mostrar o estado antigo.` });
+    }
+  } catch (err) {
+    dialog.showErrorBox("Pareamento não concluído", err.message);
+  }
+}
+
 function createTray() {
   const tray_ = new Tray(nativeImage.createFromPath(TRAY_PNG));
   tray_.setToolTip("JARVIS — iniciando…");
   const menu = Menu.buildFromTemplate([
     { label: "Mostrar JARVIS", click: () => focusAnyWindow() },
+    { type: "separator" },
+    { label: "Parear de novo…", click: () => { reparear(); } },
     { type: "separator" },
     { label: "Sair", click: () => { quitting = true; app.quit(); } },
   ]);

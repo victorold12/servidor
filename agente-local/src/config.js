@@ -5,8 +5,9 @@
  *
  * `backendUrl` é fixado (pin) no momento do pareamento e nunca trocado por um
  * comando remoto — Seção 5: "o agente ... não aceita redirecionamento pra
- * outro host". Trocar de backend exige reparear (apagar o arquivo e rodar
- * `npm run pair` de novo), uma ação local, nunca uma mensagem da rede.
+ * outro host". Trocar de backend exige reparear, sempre por uma ação local:
+ * bandeja > "Parear de novo…" no app, ou clearConfig() + `npm run pair` no
+ * agente avulso. Nunca por uma mensagem da rede.
  */
 import fs from "node:fs";
 import os from "node:os";
