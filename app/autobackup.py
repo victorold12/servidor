@@ -128,10 +128,55 @@ def aplica_retencao() -> list[str]:
     return removidos
 
 
+def disco_efemero(raiz_persistente: str = "/var/data") -> bool:
+    """True quando o snapshot mora num disco que some sozinho.
+
+    É o caso do plano free do Render: sem disco montado, o container é recriado a
+    cada deploy e a cada vez que o serviço acorda de hibernar — e leva junto o
+    banco E os snapshots, que estão lado a lado. Dizer isso importa porque o
+    estado "backup ligado, 14 snapshots guardados" passa uma segurança que aqui
+    não existe.
+
+    RENDER é posto pela plataforma (mesma detecção usada no boot). Fora dele, o
+    disco é de quem rodou e fica — não é papel deste código adivinhar a política
+    de outra hospedagem.
+
+    `raiz_persistente` é o mountPath do render.yaml, e é argumento pra o teste
+    poder usar uma pasta de verdade. Comparação por prefixo de caminho, não por
+    substring: "/tmp/x/var/data" CONTÉM "/var/data" e não é disco montado nenhum.
+    """
+    if not os.getenv("RENDER"):
+        return False
+    try:
+        caminho = Path(db._DB_PATH).resolve()
+        raiz = Path(raiz_persistente).resolve()
+    except OSError:
+        return True     # na dúvida, avisa: o alarme falso custa menos que o silêncio
+    return raiz not in caminho.parents
+
+
 def status() -> dict:
     itens = lista()
     d = diretorio()
     local = "o disco do servidor"
+    efemero = disco_efemero()
+
+    aviso = (
+        "O snapshot vai pro disco do servidor, na mesma máquina do banco. "
+        "Se o backend está publicado na nuvem, essa é uma cópia fora do teu PC. "
+        "Se o backend roda no teu PC, é o MESMO disco do banco: protege contra "
+        "apagar sem querer ou corromper o arquivo, mas não contra o HD morrer — "
+        "pra isso, baixe o backup de vez em quando."
+    )
+    if efemero:
+        aviso = (
+            "ATENÇÃO: este servidor está num plano sem disco permanente. O "
+            "snapshot cai no mesmo disco efêmero do banco, então os dois somem "
+            "juntos quando o container é recriado — o que acontece a cada deploy "
+            "e a cada vez que o serviço acorda de hibernar. Isso aqui protege "
+            "contra corromper o arquivo, e só. Pra ter cópia de verdade: baixe um "
+            "snapshot de vez em quando, e mantenha o serviço acordado."
+        )
     return {
         "ligado": bool(settings.backup_every_hours > 0),
         "cada_horas": settings.backup_every_hours,
@@ -140,13 +185,8 @@ def status() -> dict:
         "existem": len(itens),
         "ultimo": itens[0] if itens else None,
         "onde": local,
-        "aviso": (
-            "O snapshot vai pro disco do servidor, na mesma máquina do banco. "
-            "Se o backend está publicado na nuvem, essa é uma cópia fora do teu PC. "
-            "Se o backend roda no teu PC, é o MESMO disco do banco: protege contra "
-            "apagar sem querer ou corromper o arquivo, mas não contra o HD morrer — "
-            "pra isso, baixe o backup de vez em quando."
-        ),
+        "efemero": efemero,
+        "aviso": aviso,
     }
 
 

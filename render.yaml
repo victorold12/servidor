@@ -28,6 +28,23 @@ services:
       # mesmo valor no painel, em Config > Backend VTz OS > Token de acesso.
       - key: BACKEND_TOKEN
         sync: false
+      # Snapshot do banco (conversas + memória) a cada 6 horas, guardando os 14
+      # últimos. Custa alguns KB e roda dentro do processo — sem serviço extra.
+      #
+      # LEIA ISTO ANTES DE CONFIAR NELE: no plano free o snapshot cai no MESMO
+      # disco efêmero do banco. Isso protege contra corromper o arquivo ou
+      # apagar sem querer — NÃO protege contra o container ser recriado, que é o
+      # que acontece a cada deploy e a cada vez que o serviço acorda de
+      # hibernar. Nesse caso banco e snapshots somem juntos.
+      #
+      # O que realmente segura os dados no plano free: (1) manter o serviço
+      # acordado, veja "Não deixar o servidor hibernar" no README; (2) baixar o
+      # backup de vez em quando (painel > Config > Dados). Persistência de
+      # verdade só com disco, que é plano pago — o bloco comentado mais abaixo.
+      - key: BACKUP_EVERY_HOURS
+        value: "6"
+      - key: BACKUP_KEEP
+        value: "14"
     # ONDE O BANCO VIVE
     #
     # Do jeito que está: dentro do container. E o container do Render é recriado

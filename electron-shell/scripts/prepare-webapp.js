@@ -71,4 +71,21 @@ if (!fs.existsSync(VENDOR_SRC) || fs.readdirSync(VENDOR_SRC).length === 0) {
 fs.cpSync(VENDOR_SRC, path.join(DEST, "vendor"), { recursive: true });
 const nVendor = fs.readdirSync(VENDOR_SRC).length;
 
-console.log(`Web App copiada de ${SOURCE} -> ${DEST} (${FILES.join(", ")} + vendor/ com ${nVendor} libs)`);
+/* manifest + icones: no Electron nao servem pra instalar nada (o app JA e o
+   programa instalado) — sao copiados so pra o <link rel="manifest"> e o
+   apple-touch-icon do index.html nao virarem 404 no console.
+   sw.js de proposito NAO vem: service worker nao existe em file://.
+   Ausencia aqui e aviso, nao erro: o app funciona inteiro sem eles. */
+const OPCIONAIS = ["manifest.webmanifest", "icons"];
+const copiados = [];
+for (const nome of OPCIONAIS) {
+  const src = path.join(SOURCE, nome);
+  if (!fs.existsSync(src)) continue;
+  fs.cpSync(src, path.join(DEST, nome), { recursive: true });
+  copiados.push(nome);
+}
+if (copiados.length < OPCIONAIS.length) {
+  console.warn(`Aviso: nao achei ${OPCIONAIS.filter((n) => !copiados.includes(n)).join(", ")} no painel (segue sem).`);
+}
+
+console.log(`Web App copiada de ${SOURCE} -> ${DEST} (${FILES.join(", ")} + vendor/ com ${nVendor} libs${copiados.length ? " + " + copiados.join(", ") : ""})`);
