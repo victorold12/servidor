@@ -11,13 +11,21 @@ services:
       # Python fixo pra evitar o problema do 3.14 com pydantic
       - key: PYTHON_VERSION
         value: "3.12.7"
-      # Domínios do site que podem chamar o backend. Troque * pela URL do seu
-      # site depois (ex.: https://victorold12.github.io) pra ficar seguro.
+      # Domínios que podem chamar este backend pelo navegador. Já vem apontado
+      # pro painel publicado pelo render.yaml do repo VTz-painel, mais o
+      # localhost de desenvolvimento.
+      #
+      # Se o Render der outro nome ao site (acontece quando "vtz-painel" já
+      # existe na conta), ajuste aqui — senão o painel mostra "falha de rede"
+      # sem dizer que quem barrou foi o CORS. O log do backend imprime as
+      # origens válidas no boot.
       - key: ALLOWED_ORIGINS
-        value: "*"
-      # Token de acesso — defina um valor manualmente no painel do Render depois
-      # do primeiro deploy (Environment > Add). Sem ele, o backend fica aberto.
-      # Cole o mesmo valor no site em Config > Backend VTz OS > Token de acesso.
+        value: "https://vtz-painel.onrender.com,http://localhost:8000,http://127.0.0.1:8000"
+      # Token de acesso — OBRIGATÓRIO. O backend se recusa a subir sem ele
+      # quando roda no Render (app/main.py), porque um backend aberto com a
+      # chave do OpenRouter dentro é a conta de outra pessoa gastando a sua.
+      # Environment > Add > BACKEND_TOKEN = valor longo e aleatório. Cole o
+      # mesmo valor no painel, em Config > Backend VTz OS > Token de acesso.
       - key: BACKEND_TOKEN
         sync: false
       # ONDE O BANCO VIVE. Sem isto o SQLite fica dentro do container, e o

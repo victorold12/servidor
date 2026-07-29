@@ -1,0 +1,95 @@
+name: CI
+
+# Roda em TODO push e PR. O build-msi.yml é manual de propósito (windows-latest
+# custa minutos de verdade e leva ~7min), mas isso deixava os testes rodando só
+# quando alguém lembrava de disparar o instalador — ou seja, um commit quebrado
+# ficava invisível por dias. Este workflow é o oposto: ubuntu, sem empacotar
+# nada, só a verdade sobre o código.
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout servidor
+        uses: actions/checkout@v4
+        with:
+          path: servidor
+
+      # O painel é repo irmão e o backend não depende dele pra testar, mas o
+      # build da Web App entra aqui porque quebra de sintaxe no JS só aparece
+      # no esbuild — e antes disso só era descoberta empacotando o .msi.
+      - name: Checkout VTz-painel
+        uses: actions/checkout@v4
+        with:
+          repository: victorold12/VTz-painel
+          ref: ${{ github.ref_name }}
+          path: VTz-painel
+        continue-on-error: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # >=22 pelo WebSocket global nativo, que o Agente Local usa.
+          node-version: 22
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instala deps Python
+        working-directory: servidor
+        run: pip install -r requirements.txt
+
+      - name: Testes do backend
+        working-directory: servidor
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+
+      - name: Instala deps do Agente Local
+        working-directory: servidor/agente-local
+        run: npm install
+
+      - name: Testes do Agente Local
+        working-directory: servidor/agente-local
+        run: npm test
+
+      # Sintaxe do processo principal do Electron. Não dá pra rodar a interface
+      # aqui, mas `node --check` pega erro de sintaxe — que no .msi vira uma
+      # janela que nunca abre, o pior sintoma possível pra diagnosticar.
+      - name: Sintaxe do Electron shell
+        working-directory: servidor/electron-shell
+        run: |
+          for f in src/*.js; do node --check "$f"; done
+
+      - name: Build da Web App
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          npm install
+          npm run build
+
+      # O build gera app.js/style.css e eles são COMMITADOS no repo (o site é
+      # servido estático). Se o commitado não bate com o gerado, alguém editou
+      # src/ e esqueceu de buildar — e o que vai pro ar é a versão velha, com o
+      # bug supostamente corrigido ainda dentro.
+      - name: O bundle commitado está atualizado?
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          if ! git diff --quiet -- app.js style.css; then
+            echo "::error::app.js/style.css commitados diferem do build de src/. Rode 'npm run build' e commite."
+            git diff --stat -- app.js style.css
+            exit 1
+          fi
+          echo "bundle em dia"

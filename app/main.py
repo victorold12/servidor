@@ -24,12 +24,44 @@ async def lifespan(app: FastAPI):
     db.init_db()
     # Render seta a env var RENDER=true automaticamente em todo deploy — é o
     # sinal mais confiável de "isto não é a máquina local do dev".
+    #
+    # Aviso não protegia nada: quem não configurou o token não estava lendo o log,
+    # e o serviço subia aberto do mesmo jeito. Pior, com OPENROUTER_API_KEY no
+    # ambiente, "aberto" significa qualquer um na internet gastando o crédito do
+    # dono. Derrubar o boot é chato uma vez; a fatura é chata todo mês.
+    #
+    # Escapatória consciente pra quem REALMENTE quer um backend público (demo,
+    # instância de leitura): ALLOW_OPEN_BACKEND=1. Exige um ato deliberado, que
+    # é a diferença entre uma decisão e um esquecimento.
     if os.environ.get("RENDER") and not settings.backend_token:
+        if os.environ.get("ALLOW_OPEN_BACKEND") == "1":
+            logger.warning(
+                "Backend subindo SEM BACKEND_TOKEN porque ALLOW_OPEN_BACKEND=1. "
+                "Qualquer um com a URL pode usar este servidor (e gastar a chave "
+                "do OpenRouter configurada nele)."
+            )
+        else:
+            raise RuntimeError(
+                "BACKEND_TOKEN não configurado.\n\n"
+                "Sem ele qualquer pessoa com a URL usa este backend — e gasta o "
+                "crédito do OpenRouter configurado nele.\n\n"
+                "Como resolver, no painel do Render: Environment > Add Environment "
+                "Variable > BACKEND_TOKEN = (um valor longo e aleatório). Depois cole "
+                "o mesmo valor no painel, em Configurações > Backend VTz OS.\n\n"
+                "Se você QUER mesmo um backend aberto, defina ALLOW_OPEN_BACKEND=1."
+            )
+    # CORS aberto em produção: com BACKEND_TOKEN exigido acima, um site
+    # desconhecido ainda precisaria do token pra fazer algo — mas "*" também
+    # significa que qualquer página pode SONDAR este backend. Avisa e mostra o
+    # que está valendo, porque erro de CORS aparece no painel como "falha de
+    # rede", sem dizer que a origem é que foi barrada.
+    if os.environ.get("RENDER") and settings.origins == ["*"]:
         logger.warning(
-            "BACKEND_TOKEN não configurado em produção (Render) — o backend "
-            "está aberto para qualquer um na internet usar. Configure "
-            "BACKEND_TOKEN em Environment no painel do Render."
+            "ALLOWED_ORIGINS=* em produção. Troque pela URL do seu painel "
+            "(ex.: https://vtz-painel.onrender.com) em Environment no Render."
         )
+    logger.info("origens permitidas (CORS): %s", ", ".join(settings.origins))
+
     # Backup automático: tarefa de fundo, e só existe se BACKUP_EVERY_HOURS > 0.
     tarefa = None
     if settings.backup_every_hours > 0:
