@@ -147,6 +147,28 @@ jobs:
           done
           exit $faltou
 
+      # Os testes de ponta a ponta do painel rodam num Chromium de verdade. São
+      # a única coisa aqui que prova COMPORTAMENTO — o resto confere sintaxe,
+      # bundle e configuração. Foram escritos uma vez, passaram, e sumiram junto
+      # com o ambiente antes de serem commitados; agora estão no repo e rodam a
+      # cada push, que é a diferença entre teste e lembrança.
+      #
+      # Dois deles sobem o backend DESTE repo (uvicorn) e um chega a apagar o
+      # banco no meio pra imitar o container sendo recriado. Por isso ficam
+      # depois de instalar as deps Python — e por isso o painel precisa achar o
+      # `servidor` como pasta irmã, que é o layout que o checkout acima monta.
+      - name: Navegador pros testes do painel
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: npx playwright install --with-deps chromium
+
+      - name: Testes de ponta a ponta do painel
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        env:
+          VTZ_SERVIDOR_PATH: ${{ github.workspace }}/servidor
+        run: npm test
+
       # index.html não pode voltar a depender de CDN pra funcionalidade básica.
       # gstatic (Firebase) é a exceção consciente: sync na nuvem exige rede.
       - name: index.html não busca script de CDN
