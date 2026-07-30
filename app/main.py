@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import autobackup, db
 from .config import settings
-from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, conversations, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video, voice
+from .routers import agent, agents_hub, analytics, autonomous, backup, catalog, connectors, conversations, docs, google, health, mcp_client, memory, messaging, orchestrate, pairing, research, scrape, video, voice
 from .security import rate_limit, require_token
 
 logger = logging.getLogger("vtz_backend")
@@ -101,6 +101,7 @@ app.include_router(google.router, prefix="/api/connectors/google", tags=["google
 app.include_router(video.router, prefix="/api/video", tags=["video"], dependencies=protected)
 app.include_router(mcp_client.router, prefix="/api/mcp", tags=["mcp"], dependencies=protected)
 app.include_router(memory.router, prefix="/api", tags=["memory"], dependencies=protected)
+app.include_router(docs.router, prefix="/api", tags=["docs"], dependencies=protected)
 app.include_router(catalog.router, prefix="/api", tags=["catalog"], dependencies=protected)
 app.include_router(analytics.router, prefix="/api", tags=["analytics"], dependencies=protected)
 app.include_router(backup.router, prefix="/api", tags=["backup"], dependencies=protected)

@@ -166,7 +166,28 @@ CREATE TABLE IF NOT EXISTS conversations (
     PRIMARY KEY (user_id, conv_id)
 );
 
+-- Documentos indexados do usuário (RAG). Só os METADADOS moram aqui; os
+-- pedaços de texto e seus vetores vão pra memory_vectors com kind='doc',
+-- ref='<doc_id>#<n>'. Isso é de propósito: a busca já varre memory_vectors sem
+-- saber de espécie, então documento entra na mesma consulta que memória e
+-- resumo diário, sem uma segunda busca pra juntar depois.
+--
+-- Por que uma tabela só pra metadado: sem ela não há como listar "quais
+-- documentos estão indexados" nem apagar um documento inteiro — só pedaços
+-- soltos com ref opaca. Apagar é o requisito que decide: quem indexa um
+-- contrato errado precisa conseguir tirar.
+CREATE TABLE IF NOT EXISTS documents (
+    user_id    TEXT NOT NULL DEFAULT 'victor',
+    doc_id     TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    chars      INTEGER NOT NULL DEFAULT 0,
+    chunks     INTEGER NOT NULL DEFAULT 0,
+    indexed_at REAL NOT NULL,
+    PRIMARY KEY (user_id, doc_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_docs_user_at ON documents(user_id, indexed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pending_user_code ON pending_pairings(user_code);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_user ON memory_edges(user_id);
 CREATE INDEX IF NOT EXISTS idx_conv_user_updated ON conversations(user_id, updated_at DESC);

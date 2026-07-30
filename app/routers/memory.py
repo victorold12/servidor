@@ -327,7 +327,14 @@ async def _indexa_diario(dia: str, resumo: str) -> None:
 @router.post("/memory/reindex")
 async def reindex():
     """Recalcula os vetores de tudo. Necessário depois de configurar (ou trocar)
-    o provedor de embeddings: vetor de modelo diferente não é comparável."""
+    o provedor de embeddings: vetor de modelo diferente não é comparável.
+
+    Documentos (kind='doc') são REVETORIZADOS a partir do texto já guardado, não
+    reenviados pelo usuário: o arquivo original nunca chegou aqui — só o texto
+    dele. Sem isto, ligar os embeddings deixaria a memória buscável por
+    significado e os documentos presos no léxico, sem nada na tela explicando a
+    diferença.
+    """
     with db.get_conn() as conn:
         nos = conn.execute(
             "SELECT node_id, label, type FROM memory_nodes WHERE user_id = ?", (_USER,)
@@ -335,10 +342,14 @@ async def reindex():
         dias = conn.execute(
             "SELECT day, summary FROM memory_daily WHERE user_id = ?", (_USER,)
         ).fetchall()
+        pedacos = conn.execute(
+            "SELECT ref, text FROM memory_vectors WHERE user_id = ? AND kind = 'doc'", (_USER,)
+        ).fetchall()
 
     await _indexa("node", [(r["node_id"], f"{r['label']} ({r['type']})") for r in nos])
     await _indexa("daily", [(r["day"], r["summary"]) for r in dias])
-    return {"ok": True, "nodes": len(nos), "days": len(dias),
+    await _indexa("doc", [(r["ref"], r["text"]) for r in pedacos])
+    return {"ok": True, "nodes": len(nos), "days": len(dias), "doc_chunks": len(pedacos),
             "mode": "semantic" if embeddings.configured() else "lexical"}
 
 
@@ -400,13 +411,34 @@ async def search_memory(q: str, limit: int = 8):
     pontuados = [(s, r) for s, r in pontuados if s > 0]
     pontuados.sort(key=lambda t: t[0], reverse=True)
 
+    melhores = pontuados[:limit]
+
+    # Nome do documento de origem, quando o resultado veio de um. Sem isto o
+    # modelo recebe um trecho e uma ref opaca ("a3f9c2#7") e não tem como citar
+    # a fonte — e resposta de RAG sem fonte é indistinguível de alucinação
+    # justamente quando ela acerta.
+    nomes: dict[str, str] = {}
+    docs = {r["ref"].split("#", 1)[0] for _, r in melhores if r["kind"] == "doc"}
+    if docs:
+        marcas = ",".join("?" for _ in docs)
+        with db.get_conn() as conn:
+            nomes = {
+                l["doc_id"]: l["name"]
+                for l in conn.execute(
+                    f"SELECT doc_id, name FROM documents WHERE user_id = ? "
+                    f"AND doc_id IN ({marcas})", (_USER, *docs))
+            }
+
+    def _item(s, r):
+        d = {"kind": r["kind"], "ref": r["ref"], "text": r["text"], "score": round(s, 4)}
+        if r["kind"] == "doc":
+            d["source"] = nomes.get(r["ref"].split("#", 1)[0], "documento removido")
+        return d
+
     corpo = {
         "mode": modo,
         "query": q,
-        "results": [
-            {"kind": r["kind"], "ref": r["ref"], "text": r["text"], "score": round(s, 4)}
-            for s, r in pontuados[:limit]
-        ],
+        "results": [_item(s, r) for s, r in melhores],
     }
     if aviso:
         corpo["warning"] = aviso
