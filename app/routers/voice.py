@@ -145,6 +145,28 @@ class SttConfigIn(BaseModel):
     threads: int | None = None
 
 
+class TranscribeIn(BaseModel):
+    audio_base64: str
+    format: str = "webm"
+
+
+@router.post("/voice/{agent_id}/transcribe")
+async def transcribe(agent_id: str, body: TranscribeIn):
+    """Transcreve um áudio gravado no navegador, usando o whisper DO PC.
+
+    Existe porque o aplicativo de desktop carrega a página de file://, e ali o
+    reconhecimento de fala do navegador não existe — ele depende de um serviço
+    do Google que o Electron não embarca. Sem esta rota, falar com o JARVIS no
+    .msi era impossível por construção.
+
+    O áudio NÃO fica no servidor: passa por aqui, vai pro agente, e o arquivo
+    temporário é apagado lá assim que o whisper devolve o texto.
+    """
+    return await _pede(agent_id, "stt_transcribe",
+                       {"audio_base64": body.audio_base64, "format": body.format},
+                       timeout=180.0)
+
+
 @router.get("/voice/{agent_id}/stt")
 async def get_stt(agent_id: str):
     return await _pede(agent_id, "stt_config_get", timeout=20.0)

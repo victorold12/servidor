@@ -13,6 +13,8 @@
  * comando — cobrem criar/ler/listar/apagar sem passar por shell (Seção 4/9).
  */
 import os from "node:os";
+import path from "node:path";
+import fsp from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { runCommand, runFileOp } from "./safe-exec.js";
 import { recordAudit } from "./audit.js";
@@ -289,10 +291,35 @@ async function handleVoice(action, args) {
       case "stt_config_set":
         return { ok: true, data: { config: saveSttConfig(args) } };
       case "stt_transcribe": {
-        const r = await transcribe(args.path, args.overrides || {});
-        if (!r.ok) return { ok: false, data: r };
-        return { ok: true, data: { text: r.text, model: r.model,
-                                   wake: detectWakeWord(r.text) } };
+        /* Dois modos, e o segundo é o que faz o JARVIS ouvir no aplicativo de
+           desktop: lá a página vem de file:// e o reconhecimento de fala do
+           navegador não existe (depende de um serviço do Google que o Electron
+           não embarca). Então o painel GRAVA o áudio e manda os bytes pra cá,
+           onde o whisper roda de verdade.
+
+           O arquivo temporário existe porque o whisper.cpp lê de disco, não de
+           stdin. Ele é apagado no `finally` — inclusive quando a transcrição
+           falha, senão áudio da pessoa se acumularia em %TEMP% pra sempre. */
+        let alvo = args.path;
+        let temporario = null;
+        if (!alvo && args.audio_base64) {
+          const bytes = Buffer.from(args.audio_base64, "base64");
+          if (bytes.length > 25 * 1024 * 1024) {
+            return { ok: false, data: { reason: "áudio maior que 25 MB" } };
+          }
+          const ext = (args.format || "webm").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "webm";
+          temporario = path.join(os.tmpdir(), `vtz-fala-${Date.now()}.${ext}`);
+          await fsp.writeFile(temporario, bytes);
+          alvo = temporario;
+        }
+        try {
+          const r = await transcribe(alvo, args.overrides || {});
+          if (!r.ok) return { ok: false, data: r };
+          return { ok: true, data: { text: r.text, model: r.model,
+                                     wake: detectWakeWord(r.text) } };
+        } finally {
+          if (temporario) await fsp.rm(temporario, { force: true }).catch(() => {});
+        }
       }
       /* Escuta contínua ("Ei, JARVIS" sem clicar em nada). O status carrega o
          custo estimado junto — ligar isto é ASR rodando sem parar, e quem
