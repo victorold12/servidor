@@ -21,6 +21,13 @@ _ENV_FALLBACK = {
     "google_client_id": lambda: settings.google_client_id,
     "google_client_secret": lambda: settings.google_client_secret,
     "google_redirect_uri": lambda: settings.google_redirect_uri,
+    # Sessão do Google. Fica aqui, e não em memória, porque o processo reinicia
+    # (deploy, acordar de hibernar) e sem isto você teria que refazer o login do
+    # Google toda vez — o que na prática mataria o uso de Gmail e Calendário.
+    # Limite honesto: runtime_config.json vive dentro do container, então some
+    # quando o container é recriado. Melhor que memória, longe de permanente.
+    "google_refresh_token": lambda: "",
+    "google_scopes": lambda: "",
 }
 
 
