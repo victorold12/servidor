@@ -11,19 +11,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout servidor
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: servidor
 
       - name: Checkout VTz-painel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: victorold12/VTz-painel
           ref: claude/portuguese-language-dxcsjr
           path: VTz-painel
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # >=22: o Agente Local usa o WebSocket global nativo do Node, que só
           # é garantido a partir daqui (rodar com 20 quebra createAgentConnection
@@ -31,7 +31,7 @@ jobs:
           node-version: 22
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -57,18 +57,50 @@ jobs:
         working-directory: servidor/agente-local
         run: npm test
 
+      # O backend não vai dentro do .msi, mas o Agente Local conversa com ele:
+      # se o contrato quebrar, o instalador sai com um app que não funciona.
+      # Rodar aqui é barato (os testes não usam rede) e evita empacotar isso.
+      - name: Roda os testes do backend
+        working-directory: servidor
+        shell: bash
+        env:
+          # O runner do Windows entrega stdout em cp1252, e vários testes
+          # imprimem "✓"/"≠" — sem isto eles PASSAM e ainda assim quebram o
+          # build com UnicodeEncodeError na hora de escrever o resultado.
+          PYTHONIOENCODING: utf-8
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+
       # --- Electron shell: empacota ---
       - name: Instala deps do Electron shell
         working-directory: servidor/electron-shell
         run: npm install
 
-      - name: Builda o .msi
+      - name: Builda o .msi (JARVIS Completo)
         working-directory: servidor/electron-shell
         run: npm run dist:win
 
-      - name: Sobe o .msi como artifact
-        uses: actions/upload-artifact@v4
+      - name: Sobe o .msi (Completo) como artifact
+        uses: actions/upload-artifact@v6
         with:
           name: jarvis-installer
           path: servidor/electron-shell/dist/*.msi
+          if-no-files-found: error
+
+      # Segundo instalador (Seção 10): só o Agente Local, sem a Web App
+      # embutida — não depende do checkout do VTz-painel nem do build dele.
+      - name: Builda o .msi (JARVIS Agente Local)
+        working-directory: servidor/electron-shell
+        run: npm run dist:win:agent-only
+
+      - name: Sobe o .msi (Agente Local) como artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: jarvis-agente-local-installer
+          path: servidor/electron-shell/dist-agent-only/*.msi
           if-no-files-found: error

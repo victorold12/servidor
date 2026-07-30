@@ -177,6 +177,51 @@ const r = await fetch(`${BACKEND}/api/agent`, {
 Render, Railway, Fly.io ou uma VPS. Qualquer um que rode Python + exponha uma
 porta. Suba com o `Dockerfile` ou o comando `uvicorn`.
 
+## Não deixar o servidor hibernar (plano grátis do Render)
+
+Serviço grátis dorme depois de ~15 minutos sem receber requisição. A próxima
+chamada espera o container subir — na prática, **meio minuto de tela parada na
+primeira mensagem**, que parece defeito do app e não é.
+
+O painel já resolve metade: com ele aberto, cutuca `/api/health` a cada 10
+minutos, então o servidor não dorme no meio da sessão. O que ele **não** cobre é
+o primeiro acesso do dia, com tudo fechado. Pra isso é preciso alguém de fora
+batendo na porta.
+
+**Como montar** (grátis, 2 minutos, sem cartão): crie uma conta em
+[cron-job.org](https://cron-job.org) ou [UptimeRobot](https://uptimerobot.com) e
+aponte um job para:
+
+```
+https://SEU-BACKEND.onrender.com/api/health
+```
+
+Método `GET`, sem cabeçalho nenhum — `/api/health` é a única rota aberta do
+backend justamente por ser um status sem dado sensível. Intervalo de **10
+minutos**.
+
+**A conta das horas, que é a parte que ninguém conta:** o plano grátis do Render
+dá **750 horas de instância por mês**. Um mês tem ~730 horas, então um serviço
+acordado 24/7 consome quase tudo e **não sobra nada para um segundo serviço**.
+Se você tem mais de um serviço web na conta, ou os dois estouram a cota e param,
+ou você escolhe:
+
+| Janela do cutucador | Horas/mês | Sobra da cota |
+|---|---|---|
+| 24h por dia | ~730 h | ~20 h — só dá pra um serviço |
+| 07h–01h (18h/dia) | ~547 h | ~200 h |
+| 08h–00h (16h/dia) | ~487 h | ~260 h |
+
+Nos dois serviços de cron dá pra restringir o horário. A janela de 18h cobre o
+dia inteiro de uso real e deixa margem confortável — é a recomendação.
+
+**Site estático não conta.** Se o painel está publicado como *Static Site* no
+Render, ele não consome hora de instância; a conta acima é só dos serviços web.
+
+**Efeito colateral bom:** enquanto o container não é recriado, o banco de dentro
+dele sobrevive. No plano grátis o disco é efêmero — cutucar é o que evita perder
+memória e pareamento toda vez que o serviço acorda.
+
 ## Estrutura
 ```
 app/

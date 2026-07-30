@@ -1,0 +1,222 @@
+name: CI
+
+# Roda em TODO push e PR. O build-msi.yml é manual de propósito (windows-latest
+# custa minutos de verdade e leva ~7min), mas isso deixava os testes rodando só
+# quando alguém lembrava de disparar o instalador — ou seja, um commit quebrado
+# ficava invisível por dias. Este workflow é o oposto: ubuntu, sem empacotar
+# nada, só a verdade sobre o código.
+on:
+  push:
+  pull_request:
+
+jobs:
+  # O .msi é construído em windows-latest, mas este CI roda em ubuntu — então
+  # defeito só-do-Windows ficava invisível aqui e só aparecia 7 minutos depois,
+  # no build do instalador. Aconteceu de verdade: um teste usando os.geteuid(),
+  # que não existe no Windows, derrubou o build #24.
+  #
+  # Este job roda SÓ os testes (sem empacotar nada) e leva ~1min. É a diferença
+  # entre descobrir na hora do push e descobrir na hora de gerar o instalador.
+  testes-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: pip install -r requirements.txt
+      - name: Testes do backend (Windows)
+        shell: bash
+        env:
+          # O runner do Windows entrega stdout em cp1252 e os testes imprimem
+          # "✓"/"—": sem isto eles passam e ainda assim quebram o job com
+          # UnicodeEncodeError na hora de escrever o resultado.
+          PYTHONIOENCODING: utf-8
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+      - name: Testes do Agente Local (Windows)
+        working-directory: agente-local
+        run: npm install && npm test
+
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout servidor
+        uses: actions/checkout@v5
+        with:
+          path: servidor
+
+      # O painel é repo irmão e o backend não depende dele pra testar, mas o
+      # build da Web App entra aqui porque quebra de sintaxe no JS só aparece
+      # no esbuild — e antes disso só era descoberta empacotando o .msi.
+      - name: Checkout VTz-painel
+        uses: actions/checkout@v5
+        with:
+          repository: victorold12/VTz-painel
+          ref: ${{ github.ref_name }}
+          path: VTz-painel
+        continue-on-error: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          # >=22 pelo WebSocket global nativo, que o Agente Local usa.
+          node-version: 22
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Instala deps Python
+        working-directory: servidor
+        run: pip install -r requirements.txt
+
+      - name: Testes do backend
+        working-directory: servidor
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          falhou=0
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t" || falhou=1
+          done
+          exit $falhou
+
+      - name: Instala deps do Agente Local
+        working-directory: servidor/agente-local
+        run: npm install
+
+      - name: Testes do Agente Local
+        working-directory: servidor/agente-local
+        run: npm test
+
+      # Sintaxe do processo principal do Electron. Não dá pra rodar a interface
+      # aqui, mas `node --check` pega erro de sintaxe — que no .msi vira uma
+      # janela que nunca abre, o pior sintoma possível pra diagnosticar.
+      - name: Sintaxe do Electron shell
+        working-directory: servidor/electron-shell
+        run: |
+          for f in src/*.js; do node --check "$f"; done
+
+      - name: Build da Web App
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          npm install
+          npm run build
+
+      # O build gera app.js/style.css e eles são COMMITADOS no repo (o site é
+      # servido estático). Se o commitado não bate com o gerado, alguém editou
+      # src/ e esqueceu de buildar — e o que vai pro ar é a versão velha, com o
+      # bug supostamente corrigido ainda dentro.
+      - name: O bundle commitado está atualizado?
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          # vendor/ entra na conta: é copiado do node_modules pelo build, com
+          # versão travada no package.json. Se o commitado divergir, o site vai
+          # pro ar com uma biblioteca de outra versão da que foi testada.
+          if ! git diff --quiet -- app.js style.css vendor; then
+            echo "::error::app.js/style.css/vendor commitados diferem do build de src/. Rode 'npm run build' e commite."
+            git diff --stat -- app.js style.css vendor
+            exit 1
+          fi
+          echo "bundle em dia"
+
+      # As bibliotecas saíram do CDN pro repo justamente pra o app abrir sem
+      # internet. Um vendor/ vazio passaria em tudo acima e só falharia na mão
+      # do usuário, sem markdown e sem exportação.
+      - name: vendor/ tem as bibliotecas
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          faltou=0
+          for f in marked.min.js purify.min.js xlsx.full.min.js jspdf.umd.min.js \
+                   docx.umd.min.js pptxgen.bundle.js html2canvas.min.js; do
+            if [ ! -s "vendor/$f" ]; then echo "::error::vendor/$f ausente ou vazio"; faltou=1; fi
+          done
+          exit $faltou
+
+      # Os testes de ponta a ponta do painel rodam num Chromium de verdade. São
+      # a única coisa aqui que prova COMPORTAMENTO — o resto confere sintaxe,
+      # bundle e configuração. Foram escritos uma vez, passaram, e sumiram junto
+      # com o ambiente antes de serem commitados; agora estão no repo e rodam a
+      # cada push, que é a diferença entre teste e lembrança.
+      #
+      # Dois deles sobem o backend DESTE repo (uvicorn) e um chega a apagar o
+      # banco no meio pra imitar o container sendo recriado. Por isso ficam
+      # depois de instalar as deps Python — e por isso o painel precisa achar o
+      # `servidor` como pasta irmã, que é o layout que o checkout acima monta.
+      - name: Navegador pros testes do painel
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: npx playwright install --with-deps chromium
+
+      - name: Testes de ponta a ponta do painel
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        env:
+          VTZ_SERVIDOR_PATH: ${{ github.workspace }}/servidor
+        run: npm test
+
+      # index.html não pode voltar a depender de CDN pra funcionalidade básica.
+      # gstatic (Firebase) é a exceção consciente: sync na nuvem exige rede.
+      - name: index.html não busca script de CDN
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          if grep -n 'src="https://' index.html | grep -v 'gstatic.com'; then
+            echo "::error::script remoto no index.html — traga pro vendor/ (veja scripts/build.js)"
+            exit 1
+          fi
+          echo "sem CDN além do Firebase"
+
+      # O login com Google monta um iframe no authDomain do Firebase. Se o CSP
+      # não liberar exatamente esse domínio, o login quebra CALADO: a janela do
+      # Google abre e nada acontece depois. Já aconteceu. Como o domínio está
+      # escrito em dois lugares (FIREBASE_CONFIG e o CSP), eles precisam bater.
+      - name: authDomain do Firebase está liberado no CSP
+        working-directory: VTz-painel
+        if: hashFiles('VTz-painel/package.json') != ''
+        # python em vez de grep porque o comentário acima do CSP também fala de
+        # frame-src: um grep solto casaria com ele e o teste passaria com a
+        # política errada. Aqui só o content= da meta tag entra na conta.
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          js = open('src/js/12-menus.js', encoding='utf-8').read()
+          html = open('index.html', encoding='utf-8').read()
+
+          m = re.search(r'authDomain:\s*"([^"]+)"', js)
+          if not m:
+              sys.exit('::error::não achei authDomain em src/js/12-menus.js')
+          dominio = m.group(1)
+
+          sem_comentario = re.sub(r'<!--.*?-->', '', html, flags=re.S)
+          # Fecha na aspa DUPLA de propósito: o valor do CSP contém 'self',
+          # e uma classe [\"'] terminaria a captura na primeira aspa simples,
+          # deixando a política com uma diretiva só.
+          meta = re.search(r'http-equiv="Content-Security-Policy"[^>]*content="(.*?)"',
+                           sem_comentario, re.S | re.I)
+          if not meta:
+              sys.exit('::error::não achei a meta tag de Content-Security-Policy no index.html')
+          politica = {p.split()[0]: p for p in
+                      (x.strip() for x in meta.group(1).split(';')) if p}
+
+          for diretiva in ('frame-src', 'form-action'):
+              valor = politica.get(diretiva, '')
+              if dominio not in valor:
+                  sys.exit(f'::error::{diretiva} do CSP não libera {dominio} — '
+                           f'o login do Google falha em silêncio. Valor atual: {valor or "(ausente)"}')
+          print(f'CSP libera {dominio} em frame-src e form-action')
+          PY

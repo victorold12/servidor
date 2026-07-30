@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "JARVIS Assistant",
+  "version": "0.1.0",
+  "description": "Controla o navegador para o JARVIS: pesquisa, extrai dados de página, preenche formulário. Fala direto com o backend do JARVIS (Seção 6 do esquema de arquitetura).",
+  "_comentario_permissoes": [
+    "activeTab + scripting, sem host_permissions e sem content_scripts automatico.",
+    "Antes era <all_urls> nos dois: a extensao ficava injetada em TODA pagina do",
+    "navegador o tempo todo — banco, e-mail, tudo — mesmo sem nunca ser usada.",
+    "Um furo na extensao valia para a sessao inteira da pessoa.",
+    "Agora o content-script e injetado sob demanda (popup.js), e activeTab so da",
+    "acesso a aba atual depois de um clique no icone. Se a extensao for",
+    "comprometida, o alcance e a aba que voce escolheu abrir, naquele momento."
+  ],
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "JARVIS Assistant",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "trigger-assistant": {
+      "suggested_key": { "default": "Ctrl+Shift+J" },
+      "description": "Abrir o JARVIS Assistant"
+    }
+  }
+}
