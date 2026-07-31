@@ -36,6 +36,37 @@ import path from "node:path";
 const documentos = process.env.JARVIS_DOCUMENTOS || path.join(os.homedir(), "Documents");
 const limite = Number(process.argv[2] || 240) * 1000;
 
+/* Só o Chatterbox reprova o teste. O Kokoro é o RESERVA (é assim que o painel o
+   descreve: "principal" x "fallback") — quem tem o Chatterbox de pé tem voz
+   clonada, que é o que o usuário quer. Deixar o build vermelho por causa do
+   reserva esconderia regressão no principal atrás de ruído. */
+const OBRIGATORIOS = new Set((process.env.JARVIS_VOZES_OBRIGATORIAS || "chatterbox").split(","));
+
+/* ===========================================================================
+ * PORTA ABERTA NÃO É MOTOR PRONTO — e esta é a segunda vez que este projeto
+ * aprende a mesma lição num degrau acima.
+ *
+ * O Chatterbox subiu, atendeu na 8004, e o teste deu "ok". Só que o log dele
+ * dizia, três linhas antes:
+ *
+ *     TypeError: 'NoneType' object is not callable   (perth.PerthImplicitWatermarker)
+ *     CRITICAL: TTS Model failed to load on startup.
+ *
+ * Ou seja: o servidor responde ao painel e não fala. "O comando terminou com
+ * código 0" virou "a porta abriu" — mais perto da verdade, ainda não a verdade.
+ * O que prova motor pronto é o modelo ter carregado, e isso o próprio servidor
+ * grita no stdout. Ler o que ele grita é mais honesto que confiar no socket.
+ * =========================================================================== */
+const SINAIS_DE_MODELO_MORTO = [
+  /TTS Model failed to load/i,
+  /Failed to load model/i,
+  /object is not callable/i,
+  /Traceback \(most recent call last\)/i,
+];
+
+/** Linhas que cada motor imprimiu, pra decidir se ele subiu de verdade. */
+const ditoPor = new Map();
+
 const log = (s) => console.log(s);
 
 const instalados = motoresEmDisco(documentos).filter((m) => m.instalado);
@@ -49,7 +80,24 @@ if (!instalados.length) {
   process.exit(1);
 }
 
-const vivos = await ligaMotores({ documentos, aoLinha: log });
+/* Guarda o que cada motor falou, além de imprimir. O prefixo "[Nome] " é posto
+   por ligaMotores, então dá pra atribuir a linha ao motor certo sem inventar
+   outro canal. */
+const vivos = await ligaMotores({
+  documentos,
+  aoLinha: (linha) => {
+    log(linha);
+    for (const m of instalados) {
+      if (linha.startsWith(`[${m.nome}]`)) {
+        if (!ditoPor.has(m.id)) ditoPor.set(m.id, []);
+        ditoPor.get(m.id).push(linha);
+      }
+    }
+  },
+});
+
+const modeloMorreu = (id) =>
+  (ditoPor.get(id) || []).some((l) => SINAIS_DE_MODELO_MORTO.some((re) => re.test(l)));
 
 /* Espera de verdade: o Chatterbox carrega ~4 GB de modelo antes de abrir a
    porta. Perguntar uma vez e desistir reprovaria uma instalação boa. */
@@ -79,11 +127,36 @@ while (pendentes.size && Date.now() - inicio < limite) {
 }
 
 log("\n=== veredito ===");
+const quebrados = [];
 for (const m of instalados) {
-  log(`  ${ok.has(m.id) ? "ok    " : "FALHOU"} ${m.nome} (porta ${m.porta})`);
+  const atendeu = ok.has(m.id);
+  const morto = modeloMorreu(m.id);
+  const pronto = atendeu && !morto;
+  if (!pronto) quebrados.push(m);
+
+  const situacao = !atendeu ? "não respondeu na porta"
+    : morto ? "ATENDE A PORTA MAS O MODELO NÃO CARREGOU — responderia ao painel sem falar"
+    : "pronto";
+  const marca = pronto ? "ok    " : OBRIGATORIOS.has(m.id) ? "FALHOU" : "aviso ";
+  log(`  ${marca} ${m.nome} (porta ${m.porta}): ${situacao}`);
+
+  /* Quando quebrou, repetir o que ELE disse vale mais que qualquer diagnóstico
+     meu: a causa está no stdout do próprio servidor. */
+  if (!pronto) {
+    for (const l of (ditoPor.get(m.id) || []).filter((l) => SINAIS_DE_MODELO_MORTO.some((re) => re.test(l)))) {
+      log(`         ${l}`);
+    }
+  }
 }
 
 paraMotores(vivos);
-const falhou = instalados.length - ok.size;
-log(falhou ? `\n${falhou} motor(es) não responderam.` : "\nTodos os motores instalados responderam.");
-process.exit(falhou ? 1 : 0);
+
+const reprova = quebrados.filter((m) => OBRIGATORIOS.has(m.id));
+if (!quebrados.length) {
+  log("\nTodos os motores instalados subiram e carregaram o modelo.");
+} else if (!reprova.length) {
+  log(`\nSó motor(es) opcional(is) com problema: ${quebrados.map((m) => m.nome).join(", ")}.`);
+  log("O principal está de pé, então isto não reprova o build — mas está registrado acima.");
+}
+if (reprova.length) log(`\n${reprova.map((m) => m.nome).join(", ")} não ficou(ram) pronto(s). Isto reprova.`);
+process.exit(reprova.length ? 1 : 0);
