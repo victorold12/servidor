@@ -4,16 +4,57 @@ name: Build JARVIS .msi
 # e não faz sentido rodar em todo push. Aciona em Actions > Build JARVIS .msi
 # > Run workflow. (Pode trocar pra `push:` depois se quiser build automático.)
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      repetir_versao:
+        description: "Buildar mesmo que esta versão já tenha saído (rebuild proposital)"
+        type: boolean
+        default: false
 
 jobs:
   build-msi:
     runs-on: windows-latest
+    # Pra cravar a tag da versão no fim, quando o build dá certo.
+    permissions:
+      contents: write
     steps:
       - name: Checkout servidor
         uses: actions/checkout@v5
         with:
           path: servidor
+          # A trava de versão compara com as tags; sem isto o checkout raso não
+          # traz nenhuma e ela nunca acusaria nada.
+          fetch-depth: 0
+
+      # TRAVA DE VERSÃO — primeira coisa depois do checkout, de propósito: falha
+      # em segundos, antes de gastar os minutos de Windows.
+      #
+      # Por que existe: já saiu instalador com número errado duas vezes. Um
+      # 0.6.0 que devia ter subido, e um 0.7.0 repetido — e repetir é o pior dos
+      # dois, porque o Windows decide se atualiza pela versão: 0.7.0 por cima de
+      # 0.7.0 pode não fazer nada, e quem tinha o quebrado continua com ele
+      # achando que atualizou. Quem percebeu as duas vezes foi o Victor, olhando
+      # a tela. Isso é trabalho de máquina.
+      #
+      # A marca é uma tag `msi-vX.Y.Z`, cravada só no FIM, quando o build deu
+      # certo — build que falhou não gasta o número, e tentar de novo funciona.
+      - name: Esta versão já saiu antes?
+        id: versao
+        working-directory: servidor
+        shell: bash
+        run: |
+          v=$(grep -m1 '"version"' electron-shell/package.json | sed -E 's/.*"version"[^"]*"([^"]+)".*/\1/')
+          if [ -z "$v" ]; then echo "::error::não achei a versão em electron-shell/package.json"; exit 1; fi
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+          echo "versão deste build: $v"
+          if git rev-parse -q --verify "refs/tags/msi-v$v" >/dev/null; then
+            if [ "${{ inputs.repetir_versao }}" = "true" ]; then
+              echo "::warning::$v já saiu antes — seguindo porque você marcou rebuild proposital."
+            else
+              echo "::error::A versão $v JÁ FOI PUBLICADA (tag msi-v$v). Instalar $v por cima de $v pode não atualizar nada no Windows. Suba o número em electron-shell/package.json, ou rode de novo marcando 'Buildar mesmo que esta versão já tenha saído' se o rebuild for proposital."
+              exit 1
+            fi
+          fi
 
       - name: Checkout VTz-painel
         uses: actions/checkout@v5
@@ -117,3 +158,18 @@ jobs:
           name: jarvis-agente-local-installer
           path: servidor/electron-shell/dist-agent-only/*.msi
           if-no-files-found: error
+
+      # Só aqui, no fim: o número está gasto quando existe instalador de verdade
+      # com ele. Se algo acima falhou, a tag não sai e tentar de novo funciona.
+      - name: Marca a versão como publicada
+        working-directory: servidor
+        shell: bash
+        run: |
+          v='${{ steps.versao.outputs.v }}'
+          if git rev-parse -q --verify "refs/tags/msi-v$v" >/dev/null; then
+            echo "msi-v$v já existe (rebuild proposital) — mantendo a marca original."
+          else
+            git tag "msi-v$v"
+            git push origin "msi-v$v"
+            echo "marcado: msi-v$v"
+          fi
