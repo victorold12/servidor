@@ -7,32 +7,15 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 import { pairWithBackend } from "../src/pairing.js";
 import { createAgentConnection } from "../src/ws-client.js";
-import { PYTHON_BIN } from "./_python.js";
+import { sobeBackend, esperaSaude, fetchTeimoso } from "./_backend.js";
 
 const PORT = 8800;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SESSION_TOKEN = "test-session-token";
-const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const SESSION_HEADERS = { "Content-Type": "application/json", "X-Backend-Token": SESSION_TOKEN };
-
-async function waitForHealth() {
-  for (let i = 0; i < 60; i++) {
-    try {
-      if ((await fetch(`${BASE}/api/health`)).ok) return;
-    } catch {
-      /* subindo */
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  throw new Error("backend não respondeu a tempo");
-}
 
 async function pairFreshAgent(name) {
   return pairWithBackend({
@@ -41,7 +24,7 @@ async function pairFreshAgent(name) {
     platform: "linux",
     onEvent: (evt) => {
       if (evt.type === "code") {
-        fetch(`${BASE}/api/pair/confirm`, {
+        fetchTeimoso(`${BASE}/api/pair/confirm`, {
           method: "POST",
           headers: SESSION_HEADERS,
           body: JSON.stringify({ user_code: evt.userCode }),
@@ -52,14 +35,9 @@ async function pairFreshAgent(name) {
 }
 
 test("comando disparado pelo backend chega no cliente e a resposta volta pelo HTTP", async (t) => {
-  const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
-  const proc = spawn(
-    PYTHON_BIN,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(PORT)],
-    { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
-  );
+  const proc = sobeBackend({ port: PORT, token: SESSION_TOKEN });
   t.after(() => proc.kill());
-  await waitForHealth();
+  await esperaSaude(BASE);
 
   const { agentId, agentToken } = await pairFreshAgent("PC-WSTEST");
 
@@ -76,13 +54,13 @@ test("comando disparado pelo backend chega no cliente e a resposta volta pelo HT
 
   // dá tempo do WS abrir e o hub marcar o agente online
   await new Promise((r) => setTimeout(r, 500));
-  const agentsRes = await fetch(`${BASE}/api/agents`, { headers: SESSION_HEADERS }).then((r) => r.json());
+  const agentsRes = await fetchTeimoso(`${BASE}/api/agents`, { headers: SESSION_HEADERS }).then((r) => r.json());
   assert.equal(agentsRes.agents.find((a) => a.agent_id === agentId)?.online, true, "agente aparece online no /api/agents");
 
   // "test_echo" é sintético — só prova o transporte. O vocabulário real de
   // ações (fs_read, run, etc.) é decidido no dispatcher de index.js, que fica
   // em cima disto e roteia pro safe-exec.js já testado.
-  const cmdRes = await fetch(`${BASE}/api/agents/${agentId}/command`, {
+  const cmdRes = await fetchTeimoso(`${BASE}/api/agents/${agentId}/command`, {
     method: "POST",
     headers: SESSION_HEADERS,
     body: JSON.stringify({ action: "test_echo", args: { path: "Downloads" } }),
@@ -96,21 +74,11 @@ test("comando disparado pelo backend chega no cliente e a resposta volta pelo HT
 });
 
 test("revogar o agente enquanto conectado entrega 'revoked' pro cliente", async (t) => {
-  const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
   const port = PORT + 1;
   const base = `http://127.0.0.1:${port}`;
-  const proc = spawn(
-    PYTHON_BIN,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)],
-    { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
-  );
+  const proc = sobeBackend({ port, token: SESSION_TOKEN });
   t.after(() => proc.kill());
-  for (let i = 0; i < 60; i++) {
-    try {
-      if ((await fetch(`${base}/api/health`)).ok) break;
-    } catch { /* subindo */ }
-    await new Promise((r) => setTimeout(r, 250));
-  }
+  await esperaSaude(base);
 
   const { agentId, agentToken } = await pairWithBackend({
     backendUrl: base,
@@ -118,7 +86,7 @@ test("revogar o agente enquanto conectado entrega 'revoked' pro cliente", async 
     platform: "linux",
     onEvent: (evt) => {
       if (evt.type === "code") {
-        fetch(`${base}/api/pair/confirm`, {
+        fetchTeimoso(`${base}/api/pair/confirm`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Backend-Token": SESSION_TOKEN },
           body: JSON.stringify({ user_code: evt.userCode }),
@@ -137,7 +105,7 @@ test("revogar o agente enquanto conectado entrega 'revoked' pro cliente", async 
   t.after(() => conn.close());
   await new Promise((r) => setTimeout(r, 500));
 
-  await fetch(`${base}/api/agents/${agentId}/revoke`, {
+  await fetchTeimoso(`${base}/api/agents/${agentId}/revoke`, {
     method: "POST",
     headers: { "X-Backend-Token": SESSION_TOKEN },
   });

@@ -10,42 +10,19 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 import { pairWithBackend } from "../src/pairing.js";
-import { PYTHON_BIN } from "./_python.js";
+import { sobeBackend, esperaSaude, fetchTeimoso } from "./_backend.js";
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SESSION_TOKEN = "test-session-token";
-const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
-
-async function waitForHealth(tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await fetch(`${BASE}/api/health`);
-      if (r.ok) return;
-    } catch {
-      /* backend ainda subindo */
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`backend não respondeu em ${BASE}/api/health a tempo`);
-}
 
 test("pairing.js: fluxo RFC 8628 completo contra o backend Python real", async (t) => {
-  const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
-  const proc = spawn(
-    PYTHON_BIN,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(PORT)],
-    { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
-  );
+  const proc = sobeBackend({ port: PORT, token: SESSION_TOKEN });
   t.after(() => proc.kill());
 
-  await waitForHealth();
+  await esperaSaude(BASE);
 
   // Simula o navegador confirmando assim que o código aparece — igual você
   // digitando o user_code na tela "Parear dispositivo" do site.
@@ -55,7 +32,7 @@ test("pairing.js: fluxo RFC 8628 completo contra o backend Python real", async (
     platform: "linux",
     onEvent: (evt) => {
       if (evt.type === "code") {
-        fetch(`${BASE}/api/pair/confirm`, {
+        fetchTeimoso(`${BASE}/api/pair/confirm`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Backend-Token": SESSION_TOKEN },
           body: JSON.stringify({ user_code: evt.userCode }),
@@ -91,24 +68,12 @@ test("pairing.js: fluxo RFC 8628 completo contra o backend Python real", async (
 });
 
 test("pairWithBackend: user_code errado propositalmente deixa o agente pendente (não falha sozinho)", async (t) => {
-  const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
   const port = PORT + 1;
   const base = `http://127.0.0.1:${port}`;
-  const proc = spawn(
-    PYTHON_BIN,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)],
-    { cwd: REPO_ROOT, env: { ...process.env, BACKEND_TOKEN: SESSION_TOKEN, JARVIS_DB_PATH: dbPath }, stdio: "ignore" }
-  );
+  const proc = sobeBackend({ port, token: SESSION_TOKEN });
   t.after(() => proc.kill());
 
-  for (let i = 0; i < 60; i++) {
-    try {
-      if ((await fetch(`${base}/api/health`)).ok) break;
-    } catch {
-      /* ainda subindo */
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
+  await esperaSaude(base);
 
   const controller = new AbortController();
   const pairPromise = pairWithBackend({
