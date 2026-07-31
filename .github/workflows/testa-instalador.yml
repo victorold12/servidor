@@ -1,0 +1,120 @@
+name: Testa o instalar-tudo.bat num Windows real
+
+# Existe porque eu (Claude) não tenho Windows pra executar .bat: conferia chaves,
+# escapes e correspondência de sub-rotinas no olho, publicava, e o Victor
+# descobria na mão dele o que só um Windows revela. Duas vezes seguidas. Um
+# runner windows-latest é exatamente a máquina que faltava.
+#
+# O que ele NÃO prova: que o resultado toca voz. Prova que o script roda até o
+# fim, que cada etapa reporta a verdade, e que a árvore de pastas sai certa.
+on:
+  workflow_dispatch:
+    inputs:
+      modelo_whisper:
+        description: "Modelo do whisper (base ~150 MB; large-v3 ~3,1 GB e demora muito)"
+        type: choice
+        options: [base, tiny, small, large-v3]
+        default: base
+      pular_vozes:
+        description: "Pular Chatterbox e Kokoro (o pip do torch é o passo mais lento)"
+        type: boolean
+        default: false
+
+jobs:
+  testa:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout VTz-painel
+        uses: actions/checkout@v5
+        with:
+          repository: victorold12/VTz-painel
+          ref: main
+          path: VTz-painel
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Gerado pelo MESMO código do botão do painel. Testar uma cópia à parte
+      # não valeria nada: divergiriam, e o testado deixaria de ser o baixado.
+      - name: Gera o .bat pelo gerador do painel
+        working-directory: VTz-painel
+        run: node scripts/gera-instalador.mjs ${{ inputs.modelo_whisper }} instalar-tudo.bat
+
+      - name: Como o .bat ficou
+        working-directory: VTz-painel
+        shell: bash
+        run: |
+          echo "linhas: $(wc -l < instalar-tudo.bat)"
+          echo "--- sub-rotinas e chamadas ---"
+          grep -E "^:|^call :|^  call :" instalar-tudo.bat || true
+
+      - name: O que a máquina já tem antes de rodar
+        shell: cmd
+        run: |
+          echo --- estado inicial do runner ---
+          where winget && winget --version || echo winget: AUSENTE
+          where git && git --version || echo git: AUSENTE
+          py -3.12 --version || echo py -3.12: AUSENTE
+          where ffmpeg || echo ffmpeg: AUSENTE
+          exit /b 0
+
+      - name: RODA o instalador
+        working-directory: VTz-painel
+        shell: cmd
+        env:
+          JARVIS_SEM_PAUSA: "1"
+          JARVIS_PULAR_VOZES: ${{ inputs.pular_vozes && '1' || '' }}
+        # `exit /b 0`: o objetivo é LER o relatório do script, não passar/falhar
+        # no código de saída. Um item faltando é resultado, não erro do teste —
+        # o passo de veredito abaixo é quem decide.
+        run: |
+          call instalar-tudo.bat
+          exit /b 0
+
+      - name: O que sobrou no disco
+        working-directory: VTz-painel
+        shell: cmd
+        run: |
+          if exist JARVIS ( dir /s /b JARVIS | findstr /v "\\.venv\\ \\.git\\" ) else ( echo PASTA JARVIS NAO FOI CRIADA )
+          echo.
+          echo --- resumo do proprio script ---
+          if exist JARVIS\resumo-da-instalacao.txt ( type JARVIS\resumo-da-instalacao.txt ) else ( echo sem resumo )
+          exit /b 0
+
+      - name: Depois de rodar, a maquina enxerga o que foi instalado?
+        shell: cmd
+        run: |
+          where git && git --version || echo git: AINDA AUSENTE
+          py -3.12 --version || echo py -3.12: AINDA AUSENTE
+          where ffmpeg || echo ffmpeg: AINDA AUSENTE
+          exit /b 0
+
+      - name: Veredito
+        working-directory: VTz-painel
+        shell: bash
+        run: |
+          falhou=0
+          # A árvore de pastas é a promessa central do script: se ela não sai, o
+          # resto não interessa.
+          for d in JARVIS/vozes JARVIS/whisper/programa JARVIS/whisper/modelos; do
+            if [ -d "$d" ]; then echo "ok   $d"; else echo "FALTA $d"; falhou=1; fi
+          done
+          for f in JARVIS/LEIA-ME.txt JARVIS/resumo-da-instalacao.txt; do
+            if [ -s "$f" ]; then echo "ok   $f"; else echo "FALTA $f"; falhou=1; fi
+          done
+          # O modelo do whisper é o único download grande que o script faz
+          # sozinho, e onde mora a checagem de tamanho.
+          m=$(ls -la JARVIS/whisper/modelos/*.bin 2>/dev/null | wc -l)
+          if [ "$m" -ge 1 ]; then echo "ok   modelo baixado:"; ls -la JARVIS/whisper/modelos/; else echo "FALTA modelo do whisper"; falhou=1; fi
+          if [ -f JARVIS/whisper/programa/whisper-cli.exe ]; then echo "ok   whisper-cli.exe"; else echo "FALTA whisper-cli.exe"; falhou=1; fi
+          exit $falhou
+
+      - name: Guarda o .bat testado
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: instalar-tudo-testado
+          path: VTz-painel/instalar-tudo.bat
+          if-no-files-found: warn
