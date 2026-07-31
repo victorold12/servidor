@@ -96,10 +96,18 @@ um XSS de distância, num painel que renderiza resposta de modelo como HTML.
 `ligar-vozes.bat`, atalho de Inicialização, `whisper-cli.exe`, modelo do whisper
 com 147.951.465 bytes, e o **Chatterbox respondendo na porta 8004 em 57s**.
 
-**NÃO verificado:** o Chatterbox **falando**. Na última rodada completa ele
-subiu com o modelo morto (seção 4, defeito 1), e a rodada com o conserto do
-`setuptools` ainda estava rodando quando esta sessão terminou. **Confirme antes
-de confiar.**
+**Verificado depois do conserto do `setuptools<82` (run 30669348427, verde):** o
+Chatterbox instala, sobe, responde na porta **e carrega o modelo**. O passo
+`Os motores sobem e ficam prontos?` passou sem `continue-on-error`, e o passo de
+diagnóstico (`if: failure()`) foi pulado — o que só acontece quando nada
+quebrou. Duas rodadas antes, este mesmo passo reprovava com o modelo morto.
+
+**NÃO verificado: o Chatterbox produzindo ÁUDIO.** O que está provado é que o
+modelo carregou, não que a síntese funciona — ninguém pediu uma frase a ele
+ainda. Esse é o último degrau da mesma escada que este projeto já subiu três
+vezes ("pip terminou" → "porta abriu" → "modelo carregou" → **"saiu som"**).
+Fazer isso é rápido na máquina do Victor e caro no CI, e por isso ficou pra lá:
+peça uma frase ao Chatterbox pela aba Voz e ouça.
 
 **O Kokoro nunca subiu.** Reprovou a última rodada. A causa provável já foi
 corrigida (usa `pyproject.toml`, e o instalador só sabia ler `requirements.txt`,
