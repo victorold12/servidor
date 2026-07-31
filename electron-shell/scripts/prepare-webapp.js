@@ -10,7 +10,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { MODELOS_WHISPER, PASTA_INSTALADORES, nomeDoInstalador } from "../src/instalador-vozes.js";
 
 // fileURLToPath, não new URL(...).pathname: no Windows o pathname de uma URL
 // de arquivo vem como "/D:/a/..." (barra antes da letra de unidade) — path.dirname
@@ -88,4 +90,56 @@ if (copiados.length < OPCIONAIS.length) {
   console.warn(`Aviso: nao achei ${OPCIONAIS.filter((n) => !copiados.includes(n)).join(", ")} no painel (segue sem).`);
 }
 
+/* ==========================================================================
+ * Os .bat que o botão "Instalar tudo" roda por dentro do app.
+ *
+ * Assados AQUI, em tempo de build, e não gerados na hora pelo painel. Três
+ * razões, na ordem em que importam:
+ *
+ *   1. Segurança. Se o .bat viesse do renderer por IPC, a ponte do preload
+ *      viraria "execute este texto no PC" — e o renderer é a janela que
+ *      transforma resposta de modelo em HTML. Vindo daqui, o processo principal
+ *      escolhe entre arquivos que já estavam no disco, por um id conferido
+ *      contra lista fechada.
+ *   2. É o MESMO gerador que o CI testa. `gera-instalador.mjs` é o que o
+ *      workflow testa-instalador.yml roda num Windows real; chamar ele aqui
+ *      garante que o que o app executa é byte a byte o que foi testado. Uma
+ *      segunda implementação em Node divergiria da testada com o tempo, e a
+ *      divergência apareceria na máquina do usuário.
+ *   3. app.js é minificado. Extrair `scriptInstalaTudo` do bundle em tempo de
+ *      execução não é possível: o esbuild renomeia tudo dentro do IIFE.
+ *
+ * Um arquivo por modelo do whisper (~25 KB cada) porque o modelo muda o que o
+ * script baixa e o tamanho mínimo que ele exige do download.
+ * ========================================================================== */
+const GERADOR = path.join(SOURCE, "scripts", "gera-instalador.mjs");
+if (!fs.existsSync(GERADOR)) {
+  console.error(
+    `Achei ${SOURCE}, mas falta scripts/gera-instalador.mjs — sem ele o botão ` +
+      `"Instalar tudo" do app não teria o que rodar. Atualize o VTz-painel.`
+  );
+  process.exit(1);
+}
+
+const DEST_BATS = path.join(DEST, PASTA_INSTALADORES);
+fs.mkdirSync(DEST_BATS, { recursive: true });
+for (const modelo of MODELOS_WHISPER) {
+  const saida = path.join(DEST_BATS, nomeDoInstalador(modelo));
+  const r = spawnSync(process.execPath, [GERADOR, modelo, saida], { encoding: "utf-8" });
+  if (r.status !== 0) {
+    console.error(`Falhou ao gerar o instalador de "${modelo}":\n${r.stderr || r.stdout}`);
+    process.exit(1);
+  }
+  /* Um gerador que sai 0 e escreve um arquivo vazio (ou um .bat sem CRLF) seria
+     pior que falhar: o app rodaria um script que não faz nada e diria que
+     instalou. O .bat é gerado com \r\n de propósito — quebra de linha do Unix
+     faz o cmd pular linhas sem reclamar. */
+  const txt = fs.readFileSync(saida, "utf-8");
+  if (!txt.startsWith("@echo off") || !txt.includes("\r\n")) {
+    console.error(`Instalador de "${modelo}" saiu com cara errada (${txt.length} bytes). Abortando.`);
+    process.exit(1);
+  }
+}
+
 console.log(`Web App copiada de ${SOURCE} -> ${DEST} (${FILES.join(", ")} + vendor/ com ${nVendor} libs${copiados.length ? " + " + copiados.join(", ") : ""})`);
+console.log(`Instaladores assados em ${DEST_BATS}: ${MODELOS_WHISPER.join(", ")}`);

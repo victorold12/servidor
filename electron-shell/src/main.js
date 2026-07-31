@@ -7,6 +7,15 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  MODELOS_WHISPER,
+  caminhoDoInstalador,
+  ligaMotores,
+  motoresEmDisco,
+  paraMotores,
+  raizDasVozes,
+  rodaInstalador,
+} from "./instalador-vozes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHELL_ROOT = path.resolve(__dirname, "..");
@@ -38,6 +47,9 @@ let pairingWindow = null;
 let splash = null;
 let wsConnection = null;
 let quitting = false;
+/** Instalação de vozes em andamento (só uma por vez) e servidores que subiram. */
+let instalacaoVozes = null;
+let motoresVivos = [];
 
 /** Traz de volta QUALQUER janela ativa no momento (principal ou de pareamento).
  * Sem isto, clicar na bandeja durante o pareamento não fazia nada — se essa
@@ -197,6 +209,139 @@ function setupNotificacoes() {
     });
     n.on("click", () => focusAnyWindow());
     n.show();
+  });
+}
+
+/* ==========================================================================
+ * INSTALAR AS VOZES SEM SAIR DO APP
+ *
+ * Antes: o botão "Instalar tudo" baixava um .bat, e a pessoa tinha que achar o
+ * arquivo, abrir, ler, rodar, e acompanhar numa janela preta que fechava
+ * sozinha quando dava errado. Cada um desses passos era um lugar pra desistir,
+ * e o resultado prático é que a voz local nunca saía do papel.
+ *
+ * Agora o app roda o mesmo .bat e mostra a saída aqui dentro. O que NÃO muda: a
+ * pessoa confirma antes, num diálogo nativo que diz o que vai acontecer e onde.
+ * Instalar programa continua sendo a coisa mais invasiva que este app faz, e a
+ * decisão continua sendo tomada NO PC — só deixou de exigir terminal. É a
+ * mesma forma dos Tier 2 do gate (docs/SEGURANCA-AGENTE-LOCAL.md): a ação é
+ * possível, mas nunca acontece sem um humano dizer sim na própria máquina.
+ * ========================================================================== */
+
+/** Manda uma linha de progresso pro painel que pediu a instalação. */
+function avisaVozes(wc, evento) {
+  if (wc && !wc.isDestroyed()) wc.send("jarvis:vozes-progresso", evento);
+}
+
+function estadoDasVozes() {
+  return {
+    // O instalador é um .bat: só existe caminho pra Windows. Em macOS/Linux o
+    // painel volta sozinho pro download, em vez de oferecer um botão morto.
+    suportado: process.platform === "win32",
+    rodando: !!instalacaoVozes,
+    raiz: raizDasVozes(app.getPath("documents")),
+    motores: motoresEmDisco(app.getPath("documents")).map(({ id, nome, porta, instalado, motivo, via }) => ({
+      id,
+      nome,
+      porta,
+      instalado,
+      motivo,
+      via,
+      ligado: motoresVivos.some((v) => v.id === id && v.filho.exitCode === null),
+    })),
+  };
+}
+
+function setupInstaladorVozes() {
+  ipcMain.handle("jarvis:vozes-estado", () => estadoDasVozes());
+
+  ipcMain.handle("jarvis:vozes-instalar", async (evt, modelo) => {
+    if (process.platform !== "win32") {
+      return { ok: false, erro: "O instalador embutido só existe no Windows." };
+    }
+    // Conferido aqui e não só no painel: o renderer é a parte não confiável.
+    if (!MODELOS_WHISPER.includes(modelo)) {
+      return { ok: false, erro: "Modelo de whisper desconhecido." };
+    }
+    if (instalacaoVozes) return { ok: false, erro: "Já existe uma instalação em andamento." };
+
+    let bat;
+    try {
+      bat = caminhoDoInstalador(webappPath(), modelo);
+    } catch (err) {
+      return { ok: false, erro: err.message };
+    }
+
+    const raiz = raizDasVozes(app.getPath("documents"));
+    const janela = BrowserWindow.fromWebContents(evt.sender) || mainWindow;
+    /* Com janela pai o diálogo é modal e não some atrás do app; sem ela,
+       `showMessageBox(null, ...)` não é a mesma chamada — a sobrecarga sem
+       janela existe justamente pra isso. Passar null onde se espera uma
+       BrowserWindow é o tipo de coisa que só falha na máquina do usuário. */
+    const opcoes = {
+      type: "warning",
+      buttons: ["Instalar agora", "Cancelar"],
+      defaultId: 1,
+      cancelId: 1,
+      title: "Instalar as vozes neste PC",
+      message: "Instalar Chatterbox, Kokoro e o whisper neste computador?",
+      detail:
+        `Vai baixar vários GB e instalar em:\n${raiz}\n\n` +
+        "Também instala Git, Python 3.12 e ffmpeg pelo winget, se faltarem.\n" +
+        "Desinstalar depois é apagar essa pasta.\n\n" +
+        "Você acompanha cada passo dentro do JARVIS e pode cancelar no meio.",
+    };
+    const { response } = janela
+      ? await dialog.showMessageBox(janela, opcoes)
+      : await dialog.showMessageBox(opcoes);
+    if (response !== 0) return { ok: false, cancelado: true, erro: "Instalação cancelada." };
+
+    const wc = evt.sender;
+    const aoLinha = (linha) => avisaVozes(wc, { tipo: "linha", texto: linha });
+
+    avisaVozes(wc, { tipo: "fase", fase: "instalando", texto: `Rodando o instalador (modelo ${modelo})…` });
+    instalacaoVozes = rodaInstalador({ bat, pastaTemp: app.getPath("temp"), aoLinha });
+
+    const r = await instalacaoVozes.terminou;
+    instalacaoVozes = null;
+
+    if (!r.ok) {
+      avisaVozes(wc, { tipo: "fim", ok: false, texto: r.erro || `O instalador terminou com código ${r.codigo}.` });
+      return { ok: false, erro: r.erro || `O instalador terminou com código ${r.codigo}.` };
+    }
+
+    /* "No fim os motores sobem sozinhos" — a parte do pedido que faltava. Sem
+       isto a instalação terminava e a aba Voz continuava dizendo "não está
+       rodando", que é indistinguível de ter falhado. */
+    avisaVozes(wc, { tipo: "fase", fase: "ligando", texto: "Instalado. Subindo os motores…" });
+    paraMotores(motoresVivos);
+    motoresVivos = await ligaMotores({ documentos: app.getPath("documents"), aoLinha });
+
+    const estado = estadoDasVozes();
+    avisaVozes(wc, {
+      tipo: "fim",
+      ok: true,
+      texto: motoresVivos.length
+        ? "Pronto. Na primeira vez o Chatterbox ainda baixa ~2 GB de modelo antes de responder."
+        : "Instalado, mas nenhum motor subiu — veja o log acima.",
+      estado,
+    });
+    return { ok: true, estado };
+  });
+
+  /* Ligar sem reinstalar: quem já instalou e só reabriu o app. */
+  ipcMain.handle("jarvis:vozes-ligar", async (evt) => {
+    if (process.platform !== "win32") return { ok: false, erro: "Só no Windows." };
+    const aoLinha = (linha) => avisaVozes(evt.sender, { tipo: "linha", texto: linha });
+    paraMotores(motoresVivos);
+    motoresVivos = await ligaMotores({ documentos: app.getPath("documents"), aoLinha });
+    return { ok: motoresVivos.length > 0, estado: estadoDasVozes() };
+  });
+
+  ipcMain.handle("jarvis:vozes-cancelar", () => {
+    if (!instalacaoVozes) return { ok: false, erro: "Nada rodando." };
+    instalacaoVozes.cancela();
+    return { ok: true };
   });
 }
 
@@ -416,6 +561,7 @@ if (!app.requestSingleInstanceLock()) {
     createSplash();
     createTray();
     setupNotificacoes();
+    setupInstaladorVozes();
 
     // Failsafe absoluto: não importa o que trave no fluxo (pareamento, keytar,
     // conexão), a splash NUNCA fica pra sempre. Se em 12s nada abriu o painel e
@@ -447,6 +593,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     quitting = true;
     wsConnection?.close();
+    /* Os servidores de voz são filhos deste processo. Sem derrubar aqui eles
+       ficariam ocupando 8004/8880 sem nada que os desligue a não ser o Gerenciador
+       de Tarefas — e o JARVIS seguinte não conseguiria subir os seus. Quem quer
+       voz sem o app aberto tem o atalho na Inicialização, que é outro caminho. */
+    instalacaoVozes?.cancela();
+    paraMotores(motoresVivos);
+    motoresVivos = [];
   });
 
   // Sem "quit ao fechar a última janela" — o app fica vivo na bandeja

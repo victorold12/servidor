@@ -106,7 +106,7 @@ jobs:
       - name: Sintaxe do Electron shell
         working-directory: servidor/electron-shell
         run: |
-          for f in src/*.js; do node --check "$f"; done
+          for f in src/*.js src/*.cjs; do node --check "$f"; done
 
       - name: Build da Web App
         working-directory: VTz-painel
@@ -132,6 +132,41 @@ jobs:
             exit 1
           fi
           echo "bundle em dia"
+
+      # ===================================================================
+      # O instalador de vozes embutido roda um .bat no PC de alguém a partir de
+      # um id que veio do renderer. A lista fechada que filtra esse id é a única
+      # coisa entre um XSS no painel e um processo novo na máquina — `node
+      # --check` não diz absolutamente nada sobre ela.
+      #
+      # Depois do build do painel de propósito: os .bat são assados a partir de
+      # src/js/ do painel, e o teste que confere se eles existem e têm CRLF só
+      # vale se eles tiverem acabado de ser assados.
+      # ===================================================================
+      - name: Assa os instaladores de voz
+        working-directory: servidor/electron-shell
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: node scripts/prepare-webapp.js
+
+      - name: Testes do Electron shell
+        working-directory: servidor/electron-shell
+        run: npm test
+
+      # Mesma ideia do bundle do painel: webapp/ é gerado E commitado. Se o
+      # commitado divergir do gerado, alguém mexeu no instalador e não rodou o
+      # prepare-webapp — e o .msi sairia embutindo a versão velha do script,
+      # que é a família de bug que já produziu um instalador com o painel 16
+      # commits atrasado.
+      - name: O webapp commitado está atualizado?
+        working-directory: servidor
+        if: hashFiles('VTz-painel/package.json') != ''
+        run: |
+          if ! git diff --quiet -- electron-shell/webapp; then
+            echo "::error::electron-shell/webapp difere do prepare-webapp. Rode 'npm run prepare-webapp' e commite."
+            git diff --stat -- electron-shell/webapp
+            exit 1
+          fi
+          echo "webapp em dia"
 
       # As bibliotecas saíram do CDN pro repo justamente pra o app abrir sem
       # internet. Um vendor/ vazio passaria em tudo acima e só falharia na mão
