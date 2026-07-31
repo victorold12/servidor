@@ -19,8 +19,21 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: victorold12/VTz-painel
-          ref: claude/portuguese-language-dxcsjr
+          # `main`: é o painel PUBLICADO, o mesmo que o site serve. Ficou preso
+          # num branch de desenvolvimento e ninguém percebeu — o branch parou 16
+          # commits atrás quando o trabalho foi pro main, e o .msi passou a
+          # empacotar um painel velho enquanto o site já estava novo. O sintoma
+          # foi cruel: o app abria, funcionava, e só faltavam coisas.
+          ref: main
           path: VTz-painel
+
+      # Deixa NO LOG de qual painel este instalador é feito. Quando faltar uma
+      # tela no app instalado, esta linha responde "o .msi é velho?" em um olhar,
+      # em vez de caçar a diferença pela interface.
+      - name: Qual painel entrou neste instalador
+        working-directory: VTz-painel
+        shell: bash
+        run: git log -1 --format='painel %h de %ad %n%s' --date=short
 
       - name: Setup Node
         uses: actions/setup-node@v5
