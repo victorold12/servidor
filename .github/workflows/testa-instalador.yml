@@ -19,6 +19,15 @@ on:
         description: "Pular Chatterbox e Kokoro (o pip do torch é o passo mais lento)"
         type: boolean
         default: false
+      # Antes isto era `main`, cravado. Consequência: o único jeito de saber se
+      # uma mudança no instalador sobrevive a um Windows real era MERGEAR e
+      # torcer — exatamente o contrário do que este workflow existe pra fazer.
+      # Os dois repositórios usam o mesmo nome de branch nas mudanças que
+      # atravessam os dois, então um campo só serve pros dois checkouts.
+      ref:
+        description: "Branch a testar (nos DOIS repositórios)"
+        type: string
+        default: main
 
 jobs:
   testa:
@@ -29,8 +38,17 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: victorold12/VTz-painel
-          ref: main
+          ref: ${{ inputs.ref }}
           path: VTz-painel
+
+      # O servidor entra porque é onde mora o que o APP roda: o
+      # electron-shell assa os .bat no build, e a conferência abaixo é o que
+      # garante que o assado e o testado são o mesmo arquivo.
+      - name: Checkout servidor
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          path: servidor
 
       - uses: actions/setup-node@v5
         with:
@@ -50,6 +68,39 @@ jobs:
           echo "--- sub-rotinas e chamadas ---"
           grep -E "^:|^call :|^  call :" instalar-tudo.bat || true
 
+      # ===================================================================
+      # O botão "Instalar tudo" agora roda o .bat POR DENTRO do app, sem
+      # download. O que ele roda não é gerado na hora: é assado no build pelo
+      # prepare-webapp, justamente pra o processo principal nunca receber
+      # texto de script vindo do renderer.
+      #
+      # Isso cria uma pergunta nova, e é a que este passo responde: o arquivo
+      # que o APP executa é o mesmo que este workflow testa? Se os dois
+      # puderem divergir, o teste num Windows real deixa de valer pro caminho
+      # que o usuário usa — que é agora o caminho principal.
+      # ===================================================================
+      - name: Assa os instaladores como o app faz
+        working-directory: servidor/electron-shell
+        run: node scripts/prepare-webapp.js
+
+      - name: O .bat que o app roda é o mesmo que este workflow testa?
+        shell: bash
+        run: |
+          ASSADO="servidor/electron-shell/webapp/instaladores/instalar-tudo-${{ inputs.modelo_whisper }}.bat"
+          if ! cmp -s "VTz-painel/instalar-tudo.bat" "$ASSADO"; then
+            echo "::error::O instalador assado no app difere do gerado pelo painel."
+            diff <(cat VTz-painel/instalar-tudo.bat) <(cat "$ASSADO") | head -40 || true
+            exit 1
+          fi
+          echo "byte a byte igual — testar um testa o outro"
+
+      # Roda O ASSADO, não a cópia do painel. São idênticos (o passo acima
+      # acabou de provar), e usar o do app tira qualquer dúvida sobre qual dos
+      # dois foi de fato executado num Windows.
+      - name: Testes do electron-shell
+        working-directory: servidor/electron-shell
+        run: npm test
+
       - name: O que a máquina já tem antes de rodar
         shell: cmd
         run: |
@@ -60,8 +111,8 @@ jobs:
           where ffmpeg || echo ffmpeg: AUSENTE
           exit /b 0
 
-      - name: RODA o instalador
-        working-directory: VTz-painel
+      - name: RODA o instalador (o mesmo arquivo que o app executa)
+        working-directory: servidor/electron-shell/webapp/instaladores
         shell: cmd
         env:
           JARVIS_SEM_PAUSA: "1"
@@ -70,7 +121,7 @@ jobs:
         # no código de saída. Um item faltando é resultado, não erro do teste —
         # o passo de veredito abaixo é quem decide.
         run: |
-          call instalar-tudo.bat
+          call instalar-tudo-${{ inputs.modelo_whisper }}.bat
           exit /b 0
 
       # A raiz virou fixa (Documentos\VTz LLM) e nao mais "ao lado do .bat" —
@@ -126,5 +177,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: instalar-tudo-testado
-          path: VTz-painel/instalar-tudo.bat
+          path: servidor/electron-shell/webapp/instaladores/instalar-tudo-${{ inputs.modelo_whisper }}.bat
           if-no-files-found: warn

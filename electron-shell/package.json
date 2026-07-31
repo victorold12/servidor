@@ -6,6 +6,7 @@
   "type": "module",
   "main": "src/main.js",
   "scripts": {
+    "test": "node --test",
     "prepare-webapp": "node scripts/prepare-webapp.js",
     "rebuild-agente-local": "node scripts/rebuild-agente-local.js",
     "start": "npm run prepare-webapp && electron .",

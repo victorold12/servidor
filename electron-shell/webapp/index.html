@@ -43,11 +43,23 @@
   form-action 'self' https://vtz-life-47067.firebaseapp.com https://accounts.google.com;
 ">
 <title>VTz LLM</title>
+<!--
+  Instalação no celular/desktop. O manifest é o que faz o navegador oferecer
+  "adicionar à tela de início"; sem ele o painel é só uma aba. theme-color pinta
+  a barra do sistema no Android pra a janela não ter uma faixa branca em cima de
+  um app escuro.
+
+  O apple-touch-icon precisa ser PNG: o iOS ignora SVG aqui e cai num quadrado
+  branco com um screenshot da página dentro.
+-->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#8b5cf6">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+CjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0nZycgeDE9JzAnIHkxPScwJyB4Mj0nMScgeTI9JzEnPgo8c3RvcCBvZmZzZXQ9JzAnIHN0b3AtY29sb3I9JyM4YjVjZjYnLz48c3RvcCBvZmZzZXQ9JzEnIHN0b3AtY29sb3I9JyM1YjNmYzknLz4KPC9saW5lYXJHcmFkaWVudD48L2RlZnM+CjxyZWN0IHdpZHRoPScyNCcgaGVpZ2h0PScyNCcgcng9JzYnIGZpbGw9J3VybCgjZyknLz4KPHBhdGggZD0nTTEyIDJsMS45IDUuOEwyMCAxMGwtNi4xIDIuMkwxMiAxOGwtMS45LTUuOEw0IDEwbDYuMS0yLjJ6JyBmaWxsPScjZmZmJy8+Cjwvc3ZnPgo=">
-<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+CjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0nZycgeDE9JzAnIHkxPScwJyB4Mj0nMScgeTI9JzEnPgo8c3RvcCBvZmZzZXQ9JzAnIHN0b3AtY29sb3I9JyM4YjVjZjYnLz48c3RvcCBvZmZzZXQ9JzEnIHN0b3AtY29sb3I9JyM1YjNmYzknLz4KPC9saW5lYXJHcmFkaWVudD48L2RlZnM+CjxyZWN0IHdpZHRoPScyNCcgaGVpZ2h0PScyNCcgcng9JzYnIGZpbGw9J3VybCgjZyknLz4KPHBhdGggZD0nTTEyIDJsMS45IDUuOEwyMCAxMGwtNi4xIDIuMkwxMiAxOGwtMS45LTUuOEw0IDEwbDYuMS0yLjJ6JyBmaWxsPScjZmZmJy8+Cjwvc3ZnPgo=">
+<link rel="apple-touch-icon" sizes="192x192" href="icons/icone-192.png">
 
 <script src="vendor/marked.min.js"></script>
 <script src="vendor/purify.min.js"></script>
+<script src="vendor/katex.min.js"></script>
 <!-- Geração de arquivos binários no navegador (sem backend, todos open source) -->
 <script src="vendor/xlsx.full.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
@@ -56,10 +68,14 @@
 <!-- Rasteriza mirrors HTML pro loop de QA visual (skills de pdf/docx/pptx/dashboard-html) -->
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/qrcode.min.js"></script>
+<!-- Leitor de PDF, pra indexar documento sem converter na mão. O worker fica em
+     vendor/pdf.worker.min.js e é apontado em 38-documentos.js. -->
+<script src="vendor/pdf.min.js"></script>
 <!-- Firebase (login opcional + sync na nuvem) — SDK compat via CDN -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="vendor/katex.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -279,6 +295,13 @@
         <select id="router-balanced-select"></select>
         <label class="hint">Potente (código / análise longa)</label>
         <select id="router-power-select"></select>
+        <label class="hint" style="display:block; margin:14px 0 4px;">Quando o roteador escolhe sozinho, o que ele deve priorizar</label>
+        <select id="router-vies-select" style="max-width:260px;">
+          <option value="economia">Economia — grátis sempre que der</option>
+          <option value="equilibrio">Equilíbrio — barato no trivial, bom no resto</option>
+          <option value="qualidade">Qualidade — a melhor resposta, tenho crédito</option>
+        </select>
+        <p class="hint" id="router-vies-msg" style="margin-top:8px;"></p>
       </div>
       <div class="cfg-group" data-cat="custo">
         <h3>Custo</h3>
@@ -356,6 +379,11 @@
         <button class="primary" id="backend-test-btn" style="margin-top:8px;">Testar backend</button>
         <pre id="backend-status" style="display:none; margin-top:10px; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; padding:11px; font-size:11px; line-height:1.6; white-space:pre-wrap; word-break:break-word;"></pre>
       </div>
+      <div class="cfg-group" data-cat="backend">
+        <h3>Manter o servidor acordado</h3>
+        <p class="hint" style="margin-bottom:10px;">Servidor de plano grátis <b>hiberna</b> depois de uns 15 minutos parado, e a primeira mensagem depois disso espera o container subir — meio minuto olhando pra tela. Com o painel aberto ele é cutucado de tempos em tempos, e não hiberna enquanto você está usando. <b>Isso não cobre o primeiro acesso do dia:</b> pra o servidor nunca dormir é preciso um cutucador de fora (cron-job.org, UptimeRobot) batendo em <code>/api/health</code> — está explicado no README do repo <b>servidor</b>.</p>
+        <p class="hint" id="acorda-estado">—</p>
+      </div>
       <div class="cfg-group" data-cat="agente">
         <h3>Agente Local</h3>
         <p class="hint" style="margin-bottom:12px;">Instale o Agente Local no seu PC pra habilitar ações que precisam da sua máquina: arquivo, comando, organização de pastas. Sem ele, o chat continua funcionando normalmente — só as ações do PC ficam indisponíveis. Ver <code>agente-local/README.md</code> no repositório <b>servidor</b> pra instalar.</p>
@@ -388,6 +416,32 @@
       <div class="cfg-group" data-cat="voz">
         <h3>Voz do JARVIS</h3>
         <p class="hint" style="margin-bottom:12px;">A voz roda no <b>seu PC</b>, pelo Agente Local: <b>Chatterbox</b> clona a sua voz a partir de uma amostra, <b>Kokoro</b> tem vozes prontas e é o fallback, e o <b>navegador</b> sempre funciona. Nada de áudio é guardado no servidor.</p>
+
+        <div id="voz-instalar" class="voz-instalar">
+          <h4 style="margin:14px 0 8px;">Instalar os motores no seu PC</h4>
+          <p class="hint" style="margin-bottom:9px;">Chatterbox e Kokoro são servidores Python que rodam <b>na sua máquina</b> — não vêm no instalador de propósito (juntos passam de 3&nbsp;GB, contra 115&nbsp;MB do app inteiro). Os botões abaixo baixam um <code>.bat</code> que confere Python e Git, clona o repositório, cria um ambiente isolado e instala as dependências. <b>Abra no Bloco de Notas e leia antes de rodar</b> — ele mexe no seu PC, e você tem que ver o que vai acontecer.</p>
+          <button id="voz-inst-chatterbox">Baixar instalador do Chatterbox</button>
+          <button id="voz-inst-kokoro">Baixar instalador do Kokoro</button>
+          <button id="voz-inst-tudo">Baixar instalador de TUDO</button>
+          <button id="voz-inst-ligar" class="secondary" hidden>Ligar os motores agora</button>
+          <button id="voz-reconectar" class="secondary">Procurar as vozes agora</button>
+          <p class="hint" id="voz-inst-msg" style="margin-top:8px;"></p>
+          <p class="hint" id="voz-inst-explica" style="margin-top:6px;">O de <b>TUDO</b> é um arquivo só que resolve a lista inteira numa passada: Git, Python 3.12, ffmpeg, Chatterbox, Kokoro e o modelo do whisper. Instala sempre em <b>Documentos\VTz LLM</b>, não importa de onde você rodar, e deixa as vozes ligando sozinhas quando você entra no Windows. São <b>vários GB</b> — deixe baixando e vá fazer outra coisa. Pode rodar de novo: ele pula o que já está instalado.</p>
+
+          <!-- Painel de progresso da instalação embutida (só aparece no app de
+               desktop, quando o instalador roda por dentro). O log é <pre> de
+               propósito: a saída do pip e do git vem alinhada em colunas, e
+               reflow em parágrafo transformaria uma tabela de versões em sopa. -->
+          <div id="voz-inst-painel" class="voz-inst-painel" hidden>
+            <div class="voz-inst-topo">
+              <b id="voz-inst-fase">Instalando…</b>
+              <span style="flex:1"></span>
+              <button id="voz-inst-cancelar" class="secondary" hidden>Cancelar</button>
+              <button id="voz-inst-fechar" class="secondary" hidden>Fechar</button>
+            </div>
+            <pre id="voz-inst-log" class="voz-inst-log" aria-live="polite"></pre>
+          </div>
+        </div>
 
         <p class="hint" id="voz-indisponivel" hidden></p>
 
@@ -487,6 +541,21 @@
         <p class="hint" style="margin-bottom:10px;">O painel é uma página web e o seu PC pareado obedece comandos vindos do backend — então o celular não precisa de aplicativo nenhum: precisa abrir <b>esta mesma página</b>, apontada pro <b>mesmo backend</b>. O QR só evita você digitar endereço e token numa tela de toque.</p>
         <button id="qr-celular-btn">Mostrar QR</button>
         <div id="qr-celular" class="qr-celular"></div>
+      </div>
+      <div class="cfg-group" data-cat="dados">
+        <h3>Meus documentos</h3>
+        <p class="hint" style="margin-bottom:10px;">Diferente do <b>Conhecimento do projeto</b>, que é colado inteiro no prompt a cada mensagem: aqui o documento é quebrado em pedaços no servidor, e só os pedaços que interessam à pergunta chegam ao modelo. Um manual de 80 páginas cabe; e você paga pelo que usa. O modelo consulta sozinho quando a pergunta pede — <b>peça pra ele citar a fonte</b>.</p>
+        <button class="primary" id="docs-add-btn">Indexar arquivo</button>
+        <button id="docs-reindex-btn">Reindexar tudo</button>
+        <input type="file" id="docs-file" accept=".pdf,.txt,.md,.csv,.json,.log,.xml,.yml,.yaml,.html,.js,.ts,.py,.css,application/pdf,text/*" multiple style="display:none;">
+        <p class="hint" id="docs-msg" style="margin-top:8px;"></p>
+        <div id="docs-lista" style="margin-top:10px;"></div>
+      </div>
+      <div class="cfg-group" data-cat="dados">
+        <h3>Instalar como aplicativo</h3>
+        <p class="hint" style="margin-bottom:10px;">Instalado, o painel abre em janela própria (sem barra de endereço), ganha ícone na tela de início e <b>continua abrindo sem internet</b> — as conversas já moram no navegador, então offline você lê tudo e escreve normalmente; só a resposta do modelo precisa de rede.</p>
+        <button id="pwa-instalar-btn">Instalar</button>
+        <p class="hint" id="pwa-estado" style="margin-top:8px;">—</p>
       </div>
       <div class="cfg-group" data-cat="dados">
         <h3>Conversas em todos os aparelhos</h3>
@@ -781,6 +850,12 @@
     <select id="agent-model-select"></select>
     <label class="hint" style="display:block; margin:10px 0 4px;">Ações rápidas (botões) — uma por linha, no formato <b>Rótulo | prompt que será enviado</b></label>
     <textarea id="agent-actions-input" placeholder="Resumir isto | Resuma o texto acima em 5 bullets&#10;Traduzir | Traduza para inglês" style="min-height:70px;"></textarea>
+    <label class="hint" style="display:block; margin:14px 0 4px;">Teto de gasto deste agente (US$) — 0 = sem teto</label>
+    <input type="text" id="agent-budget-input" inputmode="decimal" placeholder="ex.: 2.00" style="font-family:var(--mono); max-width:140px;">
+    <p class="hint" id="agent-spent-hint" style="margin-top:6px;"></p>
+    <button class="secondary" id="agent-reset-spent" type="button" style="width:auto; padding:7px 12px; font-size:12px; margin-top:6px;">Zerar contador</button>
+    <label class="hint" style="display:block; margin:14px 0 6px;">Ferramentas que este agente enxerga</label>
+    <div id="agent-tools-list" class="agent-tools"></div>
     <div class="row-btns">
       <button class="secondary" id="agent-cancel-btn">Cancelar</button>
       <button id="agent-save-btn">Salvar</button>
