@@ -105,9 +105,39 @@ dá certo). Rebuild proposital tem caixa pra marcar em *Run workflow*.
 `node --test` roda arquivos em paralelo, e dois testes na mesma porta derrubam o
 servidor um do outro. Já custou dois builds.
 
-**Chatterbox exige Python ≤ 3.12.** Ele fixa `torch==2.5.1`, que não tem
-instalador pra 3.13+. O erro do pip ("Could not find a version that satisfies")
-parece falta de internet e não é.
+**Chatterbox exige Python 3.12.** O `chatterbox-tts` quer `torch==2.6.0`, que
+não tem instalador pra 3.13+. O erro do pip ("Could not find a version that
+satisfies") parece falta de internet e não é.
+
+**Todo venv precisa de `setuptools` instalado à mão.** Até o Python 3.11 ele
+vinha junto; no 3.12 o venv nasce limpo. Bibliotecas escritas antes disso
+importam `pkg_resources` sem declarar a dependência — e a falha aparece longe da
+causa. O caso que custou sessões: o `perth` engole o `ImportError` de
+`pkg_resources` e deixa `PerthImplicitWatermarker` valendo `None`; o Chatterbox
+morre carregando o modelo com `TypeError: 'NoneType' object is not callable`,
+sem citar marca-d'água nem setuptools em lugar nenhum. Nenhuma chave de
+`config.yaml` resolve — a instanciação está dentro do pacote `chatterbox`.
+(github.com/resemble-ai/Perth/issues/7)
+
+**Nunca deixe o pip TROCAR uma versão de torch.** Instale a certa primeiro e
+tire as linhas de torch do `requirements.txt`. Desinstalar mexe em milhares de
+arquivos em uso, e uma interrupção no meio deixa o pacote pela metade — com
+sintomas (`cannot import name 'autocast'`) que não têm relação aparente com a
+causa. Já aconteceu, por uma junção no `PATH` que o Windows recusa atravessar.
+
+**Um passo de CI com `continue-on-error: true` é pior que nenhum passo.** Dá
+aparência de cobertura que não existe. Aconteceu com o verificador de vozes: o
+job ficou verde com um motor reprovado e o outro mudo.
+
+**O critério de pronto é o servidor FALANDO.** Não é o comando terminando com
+código 0, e não é nem o socket abrindo: o Chatterbox já subiu, atendeu na porta
+8004 e não falava, porque o modelo tinha falhado ao carregar. Quem confere isso
+é `electron-shell/scripts/sobe-vozes.js`, lendo o stdout do próprio servidor.
+
+**Instalador, voz e `.msi` se depuram MELHOR na máquina do Victor.** O ambiente
+em nuvem é Linux e o alvo é Windows; cada ida ao CI custa ~20 minutos que na
+máquina real seriam segundos. O CI continua indispensável pra provar instalação
+em **máquina limpa** — a do Victor já tem estado demais pra isso.
 
 **Este container é descartável.** O que não está commitado se perde quando a
 máquina é reciclada. Não deixe trabalho só no disco.
