@@ -73,14 +73,22 @@ jobs:
           call instalar-tudo.bat
           exit /b 0
 
-      - name: O que sobrou no disco
-        working-directory: VTz-painel
+      # A raiz virou fixa (Documentos\VTz LLM) e nao mais "ao lado do .bat" —
+      # justamente pra ninguem precisar adivinhar onde foi parar. O caminho sai
+      # do registro, entao aqui a gente pergunta do mesmo jeito que o script.
+      - name: Onde o instalador colocou as coisas
         shell: cmd
         run: |
-          if exist JARVIS ( dir /s /b JARVIS | findstr /v "\\.venv\\ \\.git\\" ) else ( echo PASTA JARVIS NAO FOI CRIADA )
+          for /f "usebackq tokens=2,*" %%A in (`reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Personal 2^>nul`) do set "DOCS=%%B"
+          if not defined DOCS set "DOCS=%USERPROFILE%\Documents"
+          echo Documentos = %DOCS%
+          if exist "%DOCS%\VTz LLM" ( dir /s /b "%DOCS%\VTz LLM" | findstr /v "\\.venv\\ \\.git\\" ) else ( echo PASTA "VTz LLM" NAO FOI CRIADA )
           echo.
           echo --- resumo do proprio script ---
-          if exist JARVIS\resumo-da-instalacao.txt ( type JARVIS\resumo-da-instalacao.txt ) else ( echo sem resumo )
+          if exist "%DOCS%\VTz LLM\resumo-da-instalacao.txt" ( type "%DOCS%\VTz LLM\resumo-da-instalacao.txt" ) else ( echo sem resumo )
+          echo.
+          echo --- pasta de inicializacao ---
+          dir "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup" 2>nul
           exit /b 0
 
       - name: Depois de rodar, a maquina enxerga o que foi instalado?
@@ -92,23 +100,25 @@ jobs:
           exit /b 0
 
       - name: Veredito
-        working-directory: VTz-painel
         shell: bash
         run: |
           falhou=0
-          # A árvore de pastas é a promessa central do script: se ela não sai, o
-          # resto não interessa.
-          for d in JARVIS/vozes JARVIS/whisper/programa JARVIS/whisper/modelos; do
-            if [ -d "$d" ]; then echo "ok   $d"; else echo "FALTA $d"; falhou=1; fi
+          RAIZ="$USERPROFILE/Documents/VTz LLM"
+          echo "conferindo em: $RAIZ"
+          for d in "vozes" "whisper/programa" "whisper/modelos"; do
+            if [ -d "$RAIZ/$d" ]; then echo "ok    $d"; else echo "FALTA $d"; falhou=1; fi
           done
-          for f in JARVIS/LEIA-ME.txt JARVIS/resumo-da-instalacao.txt; do
-            if [ -s "$f" ]; then echo "ok   $f"; else echo "FALTA $f"; falhou=1; fi
+          # ligar-vozes.bat e o atalho sao a novidade desta versao: sem eles a
+          # pessoa volta a ter que decorar caminho de venv, que foi o problema.
+          for f in "LEIA-ME.txt" "resumo-da-instalacao.txt" "ligar-vozes.bat"; do
+            if [ -s "$RAIZ/$f" ]; then echo "ok    $f"; else echo "FALTA $f"; falhou=1; fi
           done
-          # O modelo do whisper é o único download grande que o script faz
-          # sozinho, e onde mora a checagem de tamanho.
-          m=$(ls -la JARVIS/whisper/modelos/*.bin 2>/dev/null | wc -l)
-          if [ "$m" -ge 1 ]; then echo "ok   modelo baixado:"; ls -la JARVIS/whisper/modelos/; else echo "FALTA modelo do whisper"; falhou=1; fi
-          if [ -f JARVIS/whisper/programa/whisper-cli.exe ]; then echo "ok   whisper-cli.exe"; else echo "FALTA whisper-cli.exe"; falhou=1; fi
+          LNK="$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/JARVIS - vozes.lnk"
+          if [ -f "$LNK" ]; then echo "ok    atalho de inicializacao"; else echo "FALTA atalho de inicializacao"; falhou=1; fi
+          if ls "$RAIZ/whisper/modelos/"*.bin >/dev/null 2>&1; then
+            echo "ok    modelo:"; ls -la "$RAIZ/whisper/modelos/"
+          else echo "FALTA modelo do whisper"; falhou=1; fi
+          if [ -f "$RAIZ/whisper/programa/whisper-cli.exe" ]; then echo "ok    whisper-cli.exe"; else echo "FALTA whisper-cli.exe"; falhou=1; fi
           exit $falhou
 
       - name: Guarda o .bat testado
