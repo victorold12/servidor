@@ -134,7 +134,7 @@ REM e nao acharia nada - a organizacao em pastas viraria justamente o
 REM motivo de nao funcionar. Mescla no stt.json que ja existe, em vez de
 REM sobrescrever: as escolhas de modelo e threads sao preservadas.
 echo --- Apontando o Agente Local pras pastas
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try{ $d=Join-Path $env:USERPROFILE '.jarvis-agente'; if(-not (Test-Path $d)){ New-Item -ItemType Directory -Path $d | Out-Null } $f=Join-Path $d 'stt.json'; $c=@{}; if(Test-Path $f){ $c=Get-Content $f -Raw | ConvertFrom-Json -AsHashtable } $c['modelsDir']='%WMOD%'; $exe=Join-Path '%WPROG%' 'whisper-cli.exe'; if(Test-Path $exe){ $c['binary']=$exe } $c['model']='medium'; $c | ConvertTo-Json -Depth 5 | Set-Content $f -Encoding UTF8; Write-Host '      [ok] stt.json atualizado.' }catch{ Write-Host ('      [aviso] nao consegui escrever stt.json: ' + $_.Exception.Message) }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try{ $d=Join-Path $env:USERPROFILE '.jarvis-agente'; if(-not (Test-Path $d)){ New-Item -ItemType Directory -Path $d | Out-Null } $f=Join-Path $d 'stt.json'; $c=$null; if(Test-Path $f){ try{ $c=Get-Content $f -Raw | ConvertFrom-Json }catch{ $c=$null } } if($null -eq $c){ $c=New-Object PSObject } $c | Add-Member -NotePropertyName modelsDir -NotePropertyValue '%WMOD%' -Force; $exe=Join-Path '%WPROG%' 'whisper-cli.exe'; if(Test-Path $exe){ $c | Add-Member -NotePropertyName binary -NotePropertyValue $exe -Force } $c | Add-Member -NotePropertyName model -NotePropertyValue 'medium' -Force; $c | ConvertTo-Json -Depth 5 | Set-Content $f -Encoding UTF8; Write-Host '      [ok] stt.json atualizado.' }catch{ Write-Host ('      [aviso] nao consegui escrever stt.json: ' + $_.Exception.Message) }"
 echo.
 
 REM ============ papeis que ficam na pasta ============
@@ -147,7 +147,7 @@ echo --- Atalhos pra ligar as vozes
   echo   start "Chatterbox ^(porta 8004^)" cmd /k "cd /d vozes\Chatterbox-TTS-Server ^&^& call .venv\Scripts\activate.bat ^&^& python server.py"
   echo ^) else ^( echo [pulado] Chatterbox nao instalado. ^)
   echo if exist "vozes\Kokoro-FastAPI\.venv\Scripts\activate.bat" (
-  echo   start "Kokoro ^(porta 8880^)" cmd /k "cd /d vozes\Kokoro-FastAPI ^&^& call .venv\Scripts\activate.bat ^&^& python server.py"
+  echo   start "Kokoro ^(porta 8880^)" cmd /k "cd /d vozes\Kokoro-FastAPI ^&^& call .venv\Scripts\activate.bat ^&^& python -m uvicorn api.src.main:app --host 127.0.0.1 --port 8880"
   echo ^) else ^( echo [pulado] Kokoro nao instalado. ^)
   echo echo.
   echo echo Os dois servidores estao subindo em janelas minimizadas.
@@ -243,6 +243,15 @@ if defined PATH_M set "PATH=%PATH_M%"
 if defined PATH_U set "PATH=%PATH%;%PATH_U%"
 exit /b 0
 
+:requirements_sem_torch
+if not defined ALINHA_TORCH (
+  copy /y "requirements.txt" "requirements-jarvis.txt" >nul
+  exit /b 0
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try{ $L=Get-Content 'requirements.txt' | Where-Object { $_ -notmatch '^\s*torch(vision|audio)?\b\s*[=<>!~]' }; Set-Content 'requirements-jarvis.txt' $L -Encoding UTF8; Write-Host ('      ' + $L.Count + ' dependencias (as linhas de torch saem: a versao certa ja entrou)') }catch{ Copy-Item 'requirements.txt' 'requirements-jarvis.txt' -Force }"
+if not exist "requirements-jarvis.txt" copy /y "requirements.txt" "requirements-jarvis.txt" >nul
+exit /b 0
+
 :confere_tamanho
 if not defined WMB ( echo      [aviso] nao consegui medir o arquivo; seguindo. & exit /b 0 )
 if %WMB% LSS 1200 (
@@ -297,15 +306,38 @@ if exist ".venv" (
 if not exist ".venv" %PY% -m venv .venv
 call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip >nul
+set "USA_PYPROJECT="
 if not exist "requirements.txt" (
-  echo      [ATENCAO] sem requirements.txt; veja o README de %REPO%.
-  popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+  if exist "pyproject.toml" (
+    set "USA_PYPROJECT=1"
+  ) else (
+    echo      [ATENCAO] sem requirements.txt nem pyproject.toml; veja o README de %REPO%.
+    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+  )
 )
-pip install -r requirements.txt || (
-  echo      [ERRO] instalacao das dependencias falhou.
-  echo             "Could not find a version ... torch" = Python incompativel.
-  echo             erro de compilador ou CUDA = placa de video.
-  popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+
+if defined ALINHA_TORCH (
+  echo      instalando torch 2.6.0 ^(antes das dependencias, pra nao ter que trocar depois^)...
+  pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 || (
+    echo      [ERRO] nao consegui instalar o torch.
+    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+  )
+)
+
+if defined USA_PYPROJECT (
+  echo      sem requirements.txt; instalando pelo pyproject.toml...
+  pip install . || (
+    echo      [ERRO] instalacao pelo pyproject.toml falhou. Veja o README de %REPO%.
+    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+  )
+) else (
+  call :requirements_sem_torch
+  pip install -r "requirements-jarvis.txt" || (
+    echo      [ERRO] instalacao das dependencias falhou.
+    echo             "Could not find a version ... torch" = Python incompativel.
+    echo             erro de compilador ou CUDA = placa de video.
+    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+  )
 )
 if defined MODULO (
   python -c "import %MODULO%" >nul 2>nul
@@ -318,8 +350,19 @@ if defined MODULO (
   )
 )
 if defined ALINHA_TORCH (
-  echo      alinhando torch/torchvision/torchaudio ^(2.6.0^)...
-  pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0
+  python -c "import torch; torch.zeros(1)" >nul 2>nul
+  if errorlevel 1 (
+    echo      [ERRO] o torch ficou quebrado neste ambiente.
+    echo             O pip foi interrompido no meio de uma instalacao. A causa
+    echo             mais comum e uma pasta do PATH que o Windows recusa
+    echo             atravessar ^(o erro sai como "ponto de montagem nao
+    echo             confiavel"^); antivirus e disco cheio dao no mesmo.
+    echo             Apagando o ambiente - rode este arquivo de novo pra
+    echo             recria-lo limpo.
+    call deactivate >nul 2>nul
+    rmdir /s /q ".venv"
+    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+  )
 )
 if defined DESLIGA_MARCA if exist "config.yaml" (
   echo      desligando a marca-d^'agua ^(perth^)...

@@ -150,6 +150,29 @@ jobs:
           where ffmpeg || echo ffmpeg: AINDA AUSENTE
           exit /b 0
 
+      # ===================================================================
+      # O CRITÉRIO DE PRONTO: o servidor RESPONDENDO NA PORTA.
+      #
+      # Até aqui este workflow provava que o script roda até o fim e cria as
+      # pastas certas. Nunca ligou os servidores — e foi exatamente essa lacuna
+      # que deixou passar duas entregas quebradas: na primeira execução numa
+      # máquina real, os dois motores morreram em segundos (um com o torch
+      # corrompido por um pip interrompido, outro com o venv vazio porque o
+      # projeto usa pyproject.toml e o script só sabia ler requirements.txt).
+      # Nada disso apareceria conferindo pastas.
+      #
+      # Roda pelo módulo do app, não por um spawn próprio: assim o que se prova
+      # é que o caminho do BOTÃO funciona, não que existe algum jeito de ligar.
+      #
+      # `continue-on-error`: quando as vozes são puladas não há o que ligar, e
+      # mesmo com elas o resultado é informativo — o veredito abaixo é quem
+      # decide o job. Reprovar aqui esconderia o relatório de pastas.
+      - name: Os motores sobem e respondem na porta?
+        if: ${{ !inputs.pular_vozes }}
+        continue-on-error: true
+        working-directory: servidor/electron-shell
+        run: node scripts/sobe-vozes.js 420
+
       - name: Veredito
         shell: bash
         run: |
