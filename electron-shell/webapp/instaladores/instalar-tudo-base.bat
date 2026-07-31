@@ -306,7 +306,7 @@ if exist ".venv" (
 if not exist ".venv" %PY% -m venv .venv
 call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip >nul
-python -m pip install --upgrade setuptools wheel >nul || echo      [aviso] nao consegui instalar setuptools.
+python -m pip install "setuptools<82" wheel >nul || echo      [aviso] nao consegui instalar setuptools.
 set "USA_PYPROJECT="
 if not exist "requirements.txt" (
   if exist "pyproject.toml" (
@@ -369,7 +369,7 @@ if defined DESLIGA_MARCA (
   python -c "import perth,sys; sys.exit(0 if perth.PerthImplicitWatermarker else 1)" >nul 2>nul
   if errorlevel 1 (
     echo      a marca-d^'agua nao carregou; instalando resemble-perth e setuptools...
-    pip install --upgrade setuptools resemble-perth >nul 2>nul
+    pip install "setuptools<82" resemble-perth >nul 2>nul
     python -c "import perth,sys; sys.exit(0 if perth.PerthImplicitWatermarker else 1)" >nul 2>nul
     if errorlevel 1 (
       echo      [ATENCAO] o perth continua sem carregar. O servidor vai subir e

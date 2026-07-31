@@ -38,9 +38,15 @@ titulo("o que o instalador disse que ficou faltando");
 const resumo = path.join(raiz, "resumo-da-instalacao.txt");
 console.log(fs.existsSync(resumo) ? fs.readFileSync(resumo, "utf-8").trim() : "(sem resumo-da-instalacao.txt)");
 
-/** Roda um python do venv e devolve saída+erro, sem deixar o processo morrer. */
-function py(python, codigo) {
-  const r = spawnSync(python, ["-c", codigo], { encoding: "utf-8", timeout: 120000 });
+/** Roda um python do venv e devolve saída+erro, sem deixar o processo morrer.
+ *
+ * `cwd` NÃO é opcional. A primeira versão deste arquivo não passava o diretório,
+ * então rodava a partir do electron-shell — e `import api.src.main` falhava com
+ * "No module named 'api'" mesmo com o Kokoro instalado corretamente, porque o
+ * pacote está na pasta DELE. Um diagnóstico que inventa defeito é pior que
+ * nenhum: manda consertar o que não está quebrado. */
+function py(python, cwd, codigo) {
+  const r = spawnSync(python, ["-c", codigo], { cwd, encoding: "utf-8", timeout: 120000 });
   return ((r.stdout || "") + (r.stderr || "")).trim() || `(sem saída, status ${r.status})`;
 }
 
@@ -59,29 +65,28 @@ for (const m of motoresEmDisco(documentos)) {
   }
 
   console.log("\n-- versões");
-  console.log(py(python, "import sys;print('python',sys.version.split()[0])"));
-  console.log(py(python, "import torch;print('torch',torch.__version__)"));
-  console.log(py(python, "import torchvision,torchaudio;print('torchvision',torchvision.__version__,'torchaudio',torchaudio.__version__)"));
+  console.log(py(python, m.pasta, "import sys;print('python',sys.version.split()[0])"));
+  console.log(py(python, m.pasta, "import torch;print('torch',torch.__version__)"));
+  console.log(py(python, m.pasta, "import torchvision,torchaudio;print('torchvision',torchvision.__version__,'torchaudio',torchaudio.__version__)"));
 
   if (m.id === "chatterbox") {
     /* O ponto exato do mistério: a classe é None, e o erro que explicaria isso
        foi engolido. Reimportar o submódulo faz o ImportError original aparecer. */
     console.log("\n-- perth (a marca-d'água que derruba o carregamento do modelo)");
-    console.log(py(python, "import perth;print('PerthImplicitWatermarker =',perth.PerthImplicitWatermarker)"));
-    console.log(py(python,
-      "import importlib,traceback\n" +
+    console.log(py(python, m.pasta, "import perth;print('PerthImplicitWatermarker =',perth.PerthImplicitWatermarker)"));
+    console.log(py(python, m.pasta, "import importlib,traceback\n" +
       "for nome in ['perth.perth_net','perth.perth_net.perth_net_implicit','perth.utils']:\n" +
       "    try:\n" +
       "        importlib.import_module(nome); print('ok  ',nome)\n" +
       "    except Exception as e:\n" +
       "        print('ERRO',nome,'->',type(e).__name__,e)"));
-    console.log(py(python, "import perth,os;print('perth em',os.path.dirname(perth.__file__));print(sorted(os.listdir(os.path.dirname(perth.__file__)))[:20])"));
+    console.log(py(python, m.pasta, "import perth,os;print('perth em',os.path.dirname(perth.__file__));print(sorted(os.listdir(os.path.dirname(perth.__file__)))[:20])"));
   }
 
   if (m.id === "kokoro") {
     console.log("\n-- uvicorn e ponto de entrada");
-    console.log(py(python, "import uvicorn;print('uvicorn',uvicorn.__version__)"));
-    console.log(py(python, "import importlib;m=importlib.import_module('api.src.main');print('api.src.main importa, app =',getattr(m,'app',None) is not None)"));
+    console.log(py(python, m.pasta, "import uvicorn;print('uvicorn',uvicorn.__version__)"));
+    console.log(py(python, m.pasta, "import importlib;m=importlib.import_module('api.src.main');print('api.src.main importa, app =',getattr(m,'app',None) is not None)"));
     for (const f of ["pyproject.toml", "requirements.txt", "server.py"]) {
       console.log(`${f}: ${fs.existsSync(path.join(m.pasta, f))}`);
     }

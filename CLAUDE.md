@@ -109,8 +109,11 @@ servidor um do outro. Já custou dois builds.
 não tem instalador pra 3.13+. O erro do pip ("Could not find a version that
 satisfies") parece falta de internet e não é.
 
-**Todo venv precisa de `setuptools` instalado à mão.** Até o Python 3.11 ele
-vinha junto; no 3.12 o venv nasce limpo. Bibliotecas escritas antes disso
+**Todo venv precisa de `setuptools<82` instalado à mão.** Duas armadilhas
+empilhadas: até o Python 3.11 o setuptools vinha junto no venv, e no 3.12 o venv
+nasce limpo; e o `pkg_resources` foi **removido no setuptools 82**, então
+`pip install --upgrade setuptools` instala justamente a versão que não resolve.
+Tem que ser a faixa, não a mais nova. Bibliotecas escritas antes disso
 importam `pkg_resources` sem declarar a dependência — e a falha aparece longe da
 causa. O caso que custou sessões: o `perth` engole o `ImportError` de
 `pkg_resources` e deixa `PerthImplicitWatermarker` valendo `None`; o Chatterbox
