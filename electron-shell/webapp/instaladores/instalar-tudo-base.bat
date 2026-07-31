@@ -306,6 +306,7 @@ if exist ".venv" (
 if not exist ".venv" %PY% -m venv .venv
 call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip >nul
+python -m pip install --upgrade setuptools wheel >nul || echo      [aviso] nao consegui instalar setuptools.
 set "USA_PYPROJECT="
 if not exist "requirements.txt" (
   if exist "pyproject.toml" (
@@ -363,6 +364,20 @@ if defined ALINHA_TORCH (
     rmdir /s /q ".venv"
     popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
   )
+)
+if defined DESLIGA_MARCA (
+  python -c "import perth,sys; sys.exit(0 if perth.PerthImplicitWatermarker else 1)" >nul 2>nul
+  if errorlevel 1 (
+    echo      a marca-d^'agua nao carregou; instalando resemble-perth e setuptools...
+    pip install --upgrade setuptools resemble-perth >nul 2>nul
+    python -c "import perth,sys; sys.exit(0 if perth.PerthImplicitWatermarker else 1)" >nul 2>nul
+    if errorlevel 1 (
+      echo      [ATENCAO] o perth continua sem carregar. O servidor vai subir e
+      echo                abrir a porta, mas o modelo NAO vai carregar - ele
+      echo                responde e nao fala. Causa conhecida: falta pkg_resources
+      echo                ^(setuptools^). Veja github.com/resemble-ai/Perth/issues/7
+    ) else ( echo      [ok] marca-d^'agua carregando. )
+  ) else ( echo      [ok] marca-d^'agua carregando. )
 )
 if defined DESLIGA_MARCA if exist "config.yaml" (
   echo      desligando a marca-d^'agua ^(perth^)...
