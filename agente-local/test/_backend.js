@@ -1,25 +1,28 @@
 /**
- * Sobe o backend Python de verdade pros testes de integração, e conversa com
- * ele por HTTP de um jeito que não quebra por acaso.
+ * Sobe o backend Python de verdade pros testes de integração.
  *
- * Por que existe:
+ * PORTA SORTEADA PELO SISTEMA, e esse é o ponto principal deste arquivo.
  *
- * 1. `--timeout-keep-alive`. O uvicorn fecha conexão ociosa em 5s (padrão).
- *    O `fetch` do Node reaproveita socket do pool: se o teste pausa (esperar o
- *    WS abrir, esperar um poll) e a próxima requisição pega justo o socket que
- *    o servidor acabou de fechar, o Node estoura `TypeError: fetch failed` —
- *    sem bug nenhum no código. É corrida de relógio, então falha só às vezes e
- *    só onde tudo é mais lento (bateu no CI do Windows, nunca aqui no Linux).
- *    Subir o keep-alive tira a janela da corrida.
+ * Antes cada teste cravava um número: pairing usava 8799 e 8800, ws-client
+ * usava 8800 e 8801. O `node --test` roda ARQUIVOS EM PARALELO — então dois
+ * uvicorn diferentes tentavam a 8800 ao mesmo tempo. Um ganhava o bind, o
+ * outro morria caladinho, e os dois testes seguiam falando com o mesmo
+ * servidor sem saber. Ficava de pé por sorte: bastava o teste que perdeu
+ * terminar primeiro e chamar `proc.kill()` pra derrubar o servidor DEBAIXO do
+ * outro, no meio do pareamento. O sintoma era `fetch failed` num teste que não
+ * tinha nada de errado, às vezes, só onde o relógio é diferente (bateu duas
+ * vezes no CI do Windows, nunca aqui no Linux).
  *
- * 2. `fetchTeimoso`. Cinto e suspensório pro que sobrar: erro de REDE (não de
- *    HTTP) tenta de novo, o que abre socket novo. Status 4xx/5xx passa direto —
- *    esses são resposta do servidor, e é isso que os testes querem medir.
+ * Pedir porta 0 ao sistema mata a classe inteira: não existe número pra
+ * colidir, nem quando alguém acrescentar um quinto arquivo de teste amanhã.
  *
- * O código de produção já lida com isso sozinho (ver o contador de falhas de
- * rede no poll do pairing.js) — quem estava frágil era só o teste.
+ * `--timeout-keep-alive` e `fetchTeimoso` continuam abaixo como cinto e
+ * suspensório — não foram a causa (eu achei que fossem, e não eram), mas
+ * conexão ociosa reciclada é um jeito real de um teste falhar sem bug, e sai
+ * de graça deixar coberto.
  */
 import { spawn } from "node:child_process";
+import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,10 +30,26 @@ import { PYTHON_BIN } from "./_python.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
-/** Sobe uvicorn numa porta, com banco temporário isolado. Devolve o processo. */
-export function sobeBackend({ port, token }) {
+/** Porta livre de verdade, escolhida pelo sistema (listen na 0 e devolve qual saiu). */
+function portaLivre() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.on("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Sobe uvicorn numa porta livre, com banco temporário isolado, e só devolve
+ * depois que o /api/health responde. Quem chama recebe `{ proc, base, port }`.
+ */
+export async function sobeBackend({ token }) {
+  const port = await portaLivre();
   const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-int-")), "test.db");
-  return spawn(
+  const proc = spawn(
     PYTHON_BIN,
     [
       "-m", "uvicorn", "app.main:app",
@@ -44,11 +63,21 @@ export function sobeBackend({ port, token }) {
       stdio: "ignore",
     }
   );
+  const base = `http://127.0.0.1:${port}`;
+  await esperaSaude(base, proc);
+  return { proc, base, port };
 }
 
-/** Espera o /api/health responder. Estoura com mensagem clara em vez de travar. */
-export async function esperaSaude(base, tentativas = 60) {
+/**
+ * Espera o /api/health responder. Se o processo morrer antes (porta ocupada,
+ * import quebrado), desiste na hora com o código de saída — em vez de gastar
+ * 15s pra dizer só "não respondeu a tempo".
+ */
+export async function esperaSaude(base, proc, tentativas = 60) {
+  let morreu = null;
+  proc?.once("exit", (code) => { morreu = code; });
   for (let i = 0; i < tentativas; i++) {
+    if (morreu !== null) throw new Error(`backend morreu antes de subir (saiu com ${morreu}) — ${base}`);
     try {
       if ((await fetch(`${base}/api/health`)).ok) return;
     } catch {

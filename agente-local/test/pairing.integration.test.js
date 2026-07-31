@@ -12,17 +12,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { pairWithBackend } from "../src/pairing.js";
-import { sobeBackend, esperaSaude, fetchTeimoso } from "./_backend.js";
+import { sobeBackend, fetchTeimoso } from "./_backend.js";
 
-const PORT = 8799;
-const BASE = `http://127.0.0.1:${PORT}`;
 const SESSION_TOKEN = "test-session-token";
 
 test("pairing.js: fluxo RFC 8628 completo contra o backend Python real", async (t) => {
-  const proc = sobeBackend({ port: PORT, token: SESSION_TOKEN });
+  const { proc, base: BASE, port: PORT } = await sobeBackend({ token: SESSION_TOKEN });
   t.after(() => proc.kill());
-
-  await esperaSaude(BASE);
 
   // Simula o navegador confirmando assim que o código aparece — igual você
   // digitando o user_code na tela "Parear dispositivo" do site.
@@ -68,12 +64,8 @@ test("pairing.js: fluxo RFC 8628 completo contra o backend Python real", async (
 });
 
 test("pairWithBackend: user_code errado propositalmente deixa o agente pendente (não falha sozinho)", async (t) => {
-  const port = PORT + 1;
-  const base = `http://127.0.0.1:${port}`;
-  const proc = sobeBackend({ port, token: SESSION_TOKEN });
+  const { proc, base } = await sobeBackend({ token: SESSION_TOKEN });
   t.after(() => proc.kill());
-
-  await esperaSaude(base);
 
   const controller = new AbortController();
   const pairPromise = pairWithBackend({

@@ -19,17 +19,14 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sobeBackend, esperaSaude, fetchTeimoso } from "./_backend.js";
+import { sobeBackend, fetchTeimoso } from "./_backend.js";
 
-const PORT = 8802;
-const BASE = `http://127.0.0.1:${PORT}`;
 const SESSION_TOKEN = "test-session-token";
 const AGENT_ROOT = path.resolve(import.meta.dirname, "..");
 
 test("pair-cli.js: fluxo completo até o cofre do SO — sucesso real OU falha alta e clara, nunca crash", async (t) => {
-  const backendProc = sobeBackend({ port: PORT, token: SESSION_TOKEN });
+  const { proc: backendProc, base: BASE } = await sobeBackend({ token: SESSION_TOKEN });
   t.after(() => backendProc.kill());
-  await esperaSaude(BASE);
 
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-home-"));
   const cliProc = spawn("node", ["src/pair-cli.js"], {

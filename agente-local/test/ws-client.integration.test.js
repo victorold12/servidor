@@ -10,14 +10,12 @@ import assert from "node:assert/strict";
 
 import { pairWithBackend } from "../src/pairing.js";
 import { createAgentConnection } from "../src/ws-client.js";
-import { sobeBackend, esperaSaude, fetchTeimoso } from "./_backend.js";
+import { sobeBackend, fetchTeimoso } from "./_backend.js";
 
-const PORT = 8800;
-const BASE = `http://127.0.0.1:${PORT}`;
 const SESSION_TOKEN = "test-session-token";
 const SESSION_HEADERS = { "Content-Type": "application/json", "X-Backend-Token": SESSION_TOKEN };
 
-async function pairFreshAgent(name) {
+async function pairFreshAgent(BASE, name) {
   return pairWithBackend({
     backendUrl: BASE,
     name,
@@ -35,11 +33,10 @@ async function pairFreshAgent(name) {
 }
 
 test("comando disparado pelo backend chega no cliente e a resposta volta pelo HTTP", async (t) => {
-  const proc = sobeBackend({ port: PORT, token: SESSION_TOKEN });
+  const { proc, base: BASE } = await sobeBackend({ token: SESSION_TOKEN });
   t.after(() => proc.kill());
-  await esperaSaude(BASE);
 
-  const { agentId, agentToken } = await pairFreshAgent("PC-WSTEST");
+  const { agentId, agentToken } = await pairFreshAgent(BASE, "PC-WSTEST");
 
   const receivedCommands = [];
   const conn = createAgentConnection({
@@ -74,11 +71,8 @@ test("comando disparado pelo backend chega no cliente e a resposta volta pelo HT
 });
 
 test("revogar o agente enquanto conectado entrega 'revoked' pro cliente", async (t) => {
-  const port = PORT + 1;
-  const base = `http://127.0.0.1:${port}`;
-  const proc = sobeBackend({ port, token: SESSION_TOKEN });
+  const { proc, base } = await sobeBackend({ token: SESSION_TOKEN });
   t.after(() => proc.kill());
-  await esperaSaude(base);
 
   const { agentId, agentToken } = await pairWithBackend({
     backendUrl: base,
