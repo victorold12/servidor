@@ -18,6 +18,8 @@ import fsp from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { runCommand, runFileOp } from "./safe-exec.js";
 import { recordAudit } from "./audit.js";
+import { abreApp, carregaApps, fechaApp, precisaConfirmar, resolveApp, varreApps } from "./apps.js";
+import { apagaAtalho, carregaAtalhos, resolveAtalho, salvaAtalho } from "./atalhos.js";
 import { probeAll, speak } from "./tts.js";
 import {
   checkSetup, detectWakeWord, loadSttConfig, MODELS, saveSttConfig, transcribe,
@@ -172,6 +174,122 @@ export function createCommandHandler({ getAllowedRoots, confirmFn, sendAudit, is
       recordAudit({ entry: { ...auditBase, decision: decisao, result: erro ? `error:${erro}` : "ok" },
                     sendToHub: sendAudit, filePath: auditFilePath });
       return erro ? { ok: false, data: { error: erro } } : { ok: true, data: { aberto: url } };
+    }
+
+    /* ====================================================================
+       APLICATIVOS E ATALHOS
+
+       Duas cercas, e as duas importam:
+
+       1. Só roda o que está NO MAPA, e o mapa é feito aqui varrendo o disco.
+          Um caminho que chega pelo WebSocket nunca vira processo por aqui —
+          é o que separa "abrir um app" de "executar binário arbitrário".
+
+       2. Abrir app comum é Tier 1 (automático, auditado): é o que a pessoa
+          pediu, e o alvo saiu de uma lista local. Mas shell, editor de
+          registro e agendador pedem confirmação mesmo estando no mapa —
+          abrir um PowerShell não é abrir o Spotify. Fechar é sempre Tier 2:
+          derrubar um programa pode custar trabalho não salvo, e isso é
+          exatamente a definição de "suspeito" da Seção 6.
+       ==================================================================== */
+    if (action === "app_list") {
+      const mapa = carregaApps();
+      return { ok: true, data: {
+        total: Object.keys(mapa).length,
+        apps: Object.entries(mapa).map(([id, i]) => ({ id, aliases: i.aliases || [] })),
+      } };
+    }
+
+    if (action === "app_scan") {
+      const mapa = varreApps();
+      return { ok: true, data: { total: Object.keys(mapa).length } };
+    }
+
+    if (action === "app_open" || action === "app_close") {
+      const pedido = String(msg.args?.app || msg.args?.target || "");
+      const fechando = action === "app_close";
+      const app = resolveApp(pedido);
+      const auditBase = { action_type: action, target: pedido, ts: Date.now() / 1000, ...provenance };
+
+      if (!app) {
+        const erro = `não conheço "${pedido}". Rode app_scan, ou use um dos apelidos de app_list.`;
+        recordAudit({ entry: { ...auditBase, tier: 2, decision: "denied", result: `error:${erro}` },
+                      sendToHub: sendAudit, filePath: auditFilePath });
+        return { ok: false, data: { error: erro } };
+      }
+
+      const tier = (fechando || precisaConfirmar(app.id)) ? 2 : 1;
+      let decisao = "auto";
+      if (tier === 2) {
+        const chave = `${action}:${app.id}`;
+        decisao = alwaysCache.has(chave) ? "always" : null;
+        if (!decisao) {
+          const motivo = fechando
+            ? "fechar um programa pode perder trabalho não salvo"
+            : "abrir shell/editor de registro dá acesso amplo ao PC";
+          decisao = await confirmFn({ command: `${fechando ? "FECHAR" : "ABRIR"} ${app.id}`,
+                                      reason: motivo, tier: 2, tierLabel: "confirmar", provenance });
+          if (decisao === "always") alwaysCache.add(chave);
+        }
+        if (decisao === "deny") {
+          recordAudit({ entry: { ...auditBase, tier, decision: "deny", result: "error:negado no PC" },
+                        sendToHub: sendAudit, filePath: auditFilePath });
+          return { ok: false, data: { error: "você negou no PC" } };
+        }
+      }
+
+      const r = fechando ? await fechaApp(app) : await abreApp(app);
+      recordAudit({ entry: { ...auditBase, tier, decision: decisao,
+                             result: r.ok ? "ok" : `error:${r.erro}` },
+                    sendToHub: sendAudit, filePath: auditFilePath });
+      return r.ok
+        ? { ok: true, data: { app: app.id, jaEstavaFechado: r.jaEstavaFechado } }
+        : { ok: false, data: { error: r.erro } };
+    }
+
+    if (action === "atalho_list") {
+      const todos = carregaAtalhos();
+      return { ok: true, data: {
+        atalhos: Object.entries(todos).map(([nome, passos]) => ({ nome, passos: passos.length })),
+      } };
+    }
+
+    if (action === "atalho_save") {
+      return { ok: true, data: salvaAtalho(msg.args?.nome, msg.args?.passos) };
+    }
+
+    if (action === "atalho_delete") {
+      return { ok: true, data: apagaAtalho(msg.args?.nome) };
+    }
+
+    /* `atalho_run` recebe um NOME, nunca os passos. Se aceitasse a lista, o
+       atalho viraria um envelope: embrulhar qualquer ação nele atravessaria o
+       gate com um pedido de cara inocente. Recebendo o nome, o pior que um
+       backend comprometido consegue é disparar um atalho que o usuário JÁ
+       escreveu no disco — o mesmo poder de apertar um botão que já existe.
+
+       E cada passo volta pelo `handleCommand`, então continua sendo gateado um
+       a um: fechar o Discord pergunta se fechar o Discord perguntaria. */
+    if (action === "atalho_run") {
+      const alvo = resolveAtalho(msg.args?.nome);
+      if (!alvo) {
+        return { ok: false, data: { error: `não existe atalho "${msg.args?.nome || ""}"` } };
+      }
+      const passos = [];
+      for (const p of alvo.passos) {
+        const sub = p.type === "url"
+          ? { action: "open_url", args: { url: p.target }, ...provenance }
+          : { action: p.action === "fechar" ? "app_close" : "app_open",
+              args: { app: p.target }, ...provenance };
+        const r = await handleCommand(sub);
+        passos.push({ passo: `${p.type} ${p.action} ${p.target}`, ok: r.ok,
+                      erro: r.ok ? undefined : r.data?.error });
+      }
+      /* Não para no primeiro erro: um app que não abriu não pode impedir os
+         outros de fechar. O relatório diz o que foi e o que não foi — parar no
+         meio deixaria o PC num estado que ninguém pediu. */
+      const falhas = passos.filter((p) => !p.ok).length;
+      return { ok: falhas === 0, data: { atalho: alvo.nome, passos, falhas } };
     }
 
     if (FS_ACTIONS.has(action)) {
