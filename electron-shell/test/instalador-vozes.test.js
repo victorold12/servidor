@@ -47,6 +47,11 @@ const pythonDoVenv = (pasta) =>
     ? path.join(pasta, ".venv", "Scripts", "python.exe")
     : path.join(pasta, ".venv", "bin", "python");
 
+const uvicornDoVenv = (pasta) =>
+  process.platform === "win32"
+    ? path.join(pasta, ".venv", "Scripts", "uvicorn.exe")
+    : path.join(pasta, ".venv", "bin", "uvicorn");
+
 function pastaFalsa(arquivos) {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), "voz-teste-"));
   for (const rel of arquivos) {
@@ -118,13 +123,32 @@ test("comoLigar detecta server.py", () => {
 });
 
 test("comoLigar cai no uvicorn quando não há server.py", () => {
-  const pasta = pastaFalsa([path.relative(".", pythonDoVenv(".")), path.join("api", "src", "main.py")]);
+  const pasta = pastaFalsa([
+    path.relative(".", pythonDoVenv(".")),
+    path.relative(".", uvicornDoVenv(".")),
+    path.join("api", "src", "main.py"),
+  ]);
   const r = comoLigar(pasta, 8880);
   assert.equal(r.instalado, true);
   assert.ok(r.args.includes("uvicorn"));
   /* A porta tem que ir no comando: sem ela o uvicorn sobe na 8000 e o painel
      procuraria na 8880 pra sempre. */
   assert.ok(r.args.includes("8880"), "não passou a porta pro uvicorn");
+});
+
+/* O caso que mordeu de verdade, na máquina do Victor: o instalador não sabia
+   instalar o Kokoro (o projeto usa pyproject.toml, e o script só lia
+   requirements.txt), então o `.venv` ficava criado e VAZIO. Isso passava por
+   "instalado", o app tentava subir, e o log dizia "No module named uvicorn" —
+   que parece defeito do Kokoro, não instalação que nunca aconteceu. */
+test("venv vazio não conta como instalado", () => {
+  const pasta = pastaFalsa([
+    path.relative(".", pythonDoVenv(".")),
+    path.join("api", "src", "main.py"),
+  ]);
+  const r = comoLigar(pasta, 8880);
+  assert.equal(r.instalado, false, "disse que dava pra ligar um ambiente sem dependência nenhuma");
+  assert.match(r.motivo, /uvicorn|vazio/i);
 });
 
 test("comoLigar diz POR QUE não dá pra ligar, em vez de só falhar", () => {

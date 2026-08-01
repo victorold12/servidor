@@ -90,6 +90,45 @@ test("speak usa o Chatterbox quando ele responde", async () => {
   assert.equal(corpoVisto.exaggeration, 0.7, "manda a calibração pro motor");
 });
 
+/* Sem amostra clonada, o JARVIS não falava NADA pelo Chatterbox: o
+   `/v1/audio/speech` do servidor declara `voice: str` sem valor padrão, e o
+   corpo só levava o campo quando havia voz clonada — resultado, `422 Field
+   required` pra todo mundo que nunca gravou a própria voz. Nenhum teste pegou
+   porque nenhum chegava a pedir uma frase a um servidor de verdade. */
+test("sem voz clonada, descobre uma voz pronta no servidor", async () => {
+  let corpoVisto = null;
+  fakeFetch({
+    "/v1/audio/voices": () => ({
+      ok: true, status: 200,
+      json: async () => ({ status: "ok", voices: ["Abigail.wav", "Olivia.wav"] }),
+    }),
+    "8004/v1/audio/speech": (_u, o) => {
+      corpoVisto = JSON.parse(o.body);
+      if (!corpoVisto.voice) return { ok: false, status: 422, text: async () => "Field required" };
+      return okAudio();
+    },
+  });
+  const r = await speak("olá senhor", { engine: "chatterbox", voice: null });
+  assert.equal(r.ok, true, "devia ter falado usando uma voz pronta");
+  assert.equal(corpoVisto.voice, "Abigail.wav", "usa a primeira voz que o servidor lista");
+});
+
+/* Duas camadas, de propósito. A descoberta acima cobre o servidor renomear as
+   vozes — coisa que o instalador provoca sozinho, porque roda `git pull` a cada
+   execução. Esta cobre o contrário: servidor que não expõe a lista (versão
+   antiga) tem que continuar falando pela constante embutida, em vez de emudecer
+   por causa de uma comodidade que falhou. */
+test("se a lista de vozes não existe, cai na voz padrão embutida", async () => {
+  let corpoVisto = null;
+  fakeFetch({
+    "8004/v1/audio/speech": (_u, o) => { corpoVisto = JSON.parse(o.body); return okAudio(); },
+  });
+  const r = await speak("olá senhor", { engine: "chatterbox", voice: null });
+  assert.equal(r.ok, true, "a falha ao listar vozes não pode impedir a fala");
+  assert.ok(corpoVisto.voice, "tem que mandar ALGUMA voz: sem o campo o servidor devolve 422");
+  assert.match(corpoVisto.voice, /\.wav$/, "e tem que ser um arquivo de voz");
+});
+
 test("Chatterbox fora do ar cai no Kokoro E declara que foi fallback", async () => {
   let usouKokoro = false;
   fakeFetch({

@@ -150,6 +150,41 @@ jobs:
           where ffmpeg || echo ffmpeg: AINDA AUSENTE
           exit /b 0
 
+      # ===================================================================
+      # O CRITÉRIO DE PRONTO: o servidor RESPONDENDO NA PORTA.
+      #
+      # Até aqui este workflow provava que o script roda até o fim e cria as
+      # pastas certas. Nunca ligou os servidores — e foi exatamente essa lacuna
+      # que deixou passar duas entregas quebradas: na primeira execução numa
+      # máquina real, os dois motores morreram em segundos (um com o torch
+      # corrompido por um pip interrompido, outro com o venv vazio porque o
+      # projeto usa pyproject.toml e o script só sabia ler requirements.txt).
+      # Nada disso apareceria conferindo pastas.
+      #
+      # Roda pelo módulo do app, não por um spawn próprio: assim o que se prova
+      # é que o caminho do BOTÃO funciona, não que existe algum jeito de ligar.
+      #
+      # SEM `continue-on-error`. A primeira versão tinha, "pra não esconder o
+      # relatório de pastas" — e o resultado foi o job inteiro ficar VERDE com o
+      # Kokoro reprovado e o Chatterbox atendendo com o modelo morto. Criar o
+      # passo certo e desarmá-lo na mesma linha é pior que não tê-lo: dá a
+      # impressão de cobertura que não existe. O relatório de pastas roda antes;
+      # não há nada pra proteger aqui.
+      - name: Os motores sobem e ficam prontos?
+        if: ${{ !inputs.pular_vozes }}
+        working-directory: servidor/electron-shell
+        run: node scripts/sobe-vozes.js 420
+
+      # Só quando algo quebrou, e com saída curta: é o que transforma "falhou"
+      # em "falhou POR ISTO", sem precisar minerar um log de 20 mil linhas de
+      # pip. Existe porque a causa do Chatterbox (o `perth` que o __init__
+      # engole) é invisível de fora — o sintoma é um TypeError sem relação
+      # aparente com marca-d'água.
+      - name: Por que não ficou pronto (diagnóstico)
+        if: ${{ failure() && !inputs.pular_vozes }}
+        working-directory: servidor/electron-shell
+        run: node scripts/diagnostico-vozes.js
+
       - name: Veredito
         shell: bash
         run: |

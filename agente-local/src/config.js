@@ -12,16 +12,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { leJsonConfig } from "./json-config.js";
 
 const DIR = path.join(os.homedir(), ".jarvis-agente");
 const FILE = path.join(DIR, "config.json");
 
 export function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(FILE, "utf8"));
-  } catch {
-    return null;
-  }
+  return leJsonConfig(FILE);
 }
 
 export function saveConfig(cfg) {

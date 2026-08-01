@@ -109,6 +109,21 @@ export function comoLigar(pasta, porta) {
     return { instalado: true, python, args: ["server.py"], via: "server.py" };
   }
   if (fs.existsSync(path.join(pasta, "api", "src", "main.py"))) {
+    /* Ter o venv NÃO é ter as dependências. Aconteceu de verdade com o Kokoro: o
+       instalador recusava instalar (o projeto usa pyproject.toml, e o script só
+       sabia ler requirements.txt), então o `.venv` ficava criado e vazio. Aqui
+       isso virava "instalado: true", o app tentava subir, e o log dizia
+       "No module named uvicorn" — que parece defeito do Kokoro, não instalação
+       que nunca aconteceu.
+
+       Conferir o executável do uvicorn é barato (é só um `existsSync`) e
+       responde a pergunta certa: dá pra rodar ISTO agora? */
+    const uvicorn = process.platform === "win32"
+      ? path.join(pasta, ".venv", "Scripts", "uvicorn.exe")
+      : path.join(pasta, ".venv", "bin", "uvicorn");
+    if (!fs.existsSync(uvicorn)) {
+      return { instalado: false, motivo: "o ambiente existe mas está vazio (falta o uvicorn) — a instalação não chegou a terminar" };
+    }
     return {
       instalado: true,
       python,

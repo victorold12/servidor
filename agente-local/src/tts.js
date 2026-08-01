@@ -21,6 +21,11 @@ import { loadVoiceConfig, voiceSamplePath } from "./voice-config.js";
 const TIMEOUT_MS = 45_000;
 
 /** Motor -> como montar a requisição. Só isto difere entre eles. */
+/* Uma das vozes prontas que o Chatterbox-TTS-Server instala junto (ele traz 28,
+   em `voices/`). Serve de padrão pra quem ainda não clonou a própria voz — sem
+   isso a requisição sai sem `voice` e o servidor recusa com 422. */
+const VOZ_PADRAO_CHATTERBOX = "Alice.wav";
+
 const ENGINES = {
   chatterbox: {
     url: (cfg) => `${cfg.chatterboxUrl}/v1/audio/speech`,
@@ -34,8 +39,21 @@ const ENGINES = {
         temperature: cfg.temperature,
         language: cfg.language,
       };
-      // voz clonada: o servidor recebe o nome do arquivo de referência
-      if (cfg.voice) corpo.voice = cfg.voice;
+      /* `voice` é OBRIGATÓRIO neste servidor — mandar sem ele devolve 422:
+             {"loc":["body","voice"],"msg":"Field required"}
+
+         A versão antiga só preenchia quando havia voz clonada, e o padrão do
+         painel é justamente vazio ("Voz padrão do modelo"). Ou seja: quem
+         instalava tudo certo e apertava Testar sem ter clonado uma voz recebia
+         um erro — o caminho MAIS COMUM era o único quebrado.
+
+         Descoberto pedindo uma frase ao servidor de verdade, na máquina do
+         Victor. Nenhum teste pegava: o CI provava que o modelo carregava, e
+         carregar o modelo não exercita o corpo da requisição.
+
+         O padrão é uma das 28 vozes que o próprio servidor traz, então funciona
+         numa instalação recém-feita, sem depender de amostra nenhuma. */
+      corpo.voice = cfg.voice || VOZ_PADRAO_CHATTERBOX;
       return corpo;
     },
     health: (cfg) => `${cfg.chatterboxUrl}/health`,
@@ -84,12 +102,52 @@ export async function probeAll(cfg = loadVoiceConfig()) {
   return { chatterbox, kokoro };
 }
 
+/**
+ * Descobre uma voz pronta no Chatterbox quando o usuário não clonou nenhuma.
+ *
+ * O `voice` é OBRIGATÓRIO no `/v1/audio/speech` deste servidor
+ * (`class OpenAISpeechRequest: voice: str`, sem valor padrão). Como o corpo só
+ * incluía o campo quando havia amostra clonada, quem nunca subiu um áudio
+ * recebia `422 Field required` — ou seja, o JARVIS não falava de jeito nenhum
+ * pelo Chatterbox até a pessoa gravar a própria voz. O sintoma não aparecia em
+ * nenhum teste anterior porque todos paravam antes de pedir uma frase.
+ *
+ * Pergunta ao servidor em vez de cravar um nome: a lista de vozes prontas vem
+ * do repositório dele e muda entre versões — um nome fixo aqui quebraria calado
+ * no dia em que o arquivo fosse renomeado.
+ */
+async function vozPadraoDoChatterbox(cfg) {
+  /* Sem cache de propósito. Guardar o nome pareceu óbvio — são 28 arquivos que
+     não mudam entre uma fala e outra — mas cria uma armadilha: se o servidor
+     for atualizado e renomear o arquivo, o nome guardado passa a dar 404 e não
+     há nada que limpe o cache. A consulta é a um servidor local e devolve uma
+     lista minúscula; pagar isso a cada fala custa menos que uma classe inteira
+     de bug que só aparece depois de uma atualização. */
+  const r = await comTimeout(
+    (signal) => fetch(`${cfg.chatterboxUrl}/v1/audio/voices`, { signal }),
+    10_000
+  );
+  if (!r.ok) throw new Error(`não consegui listar as vozes prontas (${r.status})`);
+  const nome = (await r.json())?.voices?.[0];
+  if (!nome) throw new Error("o Chatterbox não tem nenhuma voz pronta instalada");
+  return nome;
+}
+
 async function falarCom(engine, texto, cfg) {
   const spec = ENGINES[engine];
+  let usada = cfg;
+  if (engine === "chatterbox" && !cfg.voice) {
+    /* Falhar aqui NÃO pode impedir a fala: nem toda versão do servidor exige
+       `voice`, e as que não exigem funcionavam bem sem esta descoberta. Se a
+       lista não vier, segue sem o campo — que é o comportamento de sempre — e
+       quem exigir devolve 422, um erro claro e visível. */
+    const nome = await vozPadraoDoChatterbox(cfg).catch(() => null);
+    if (nome) usada = { ...cfg, voice: nome };
+  }
   const resp = await comTimeout((signal) => fetch(spec.url(cfg), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(spec.body(cfg, texto)),
+    body: JSON.stringify(spec.body(usada, texto)),
     signal,
   }));
   if (!resp.ok) {

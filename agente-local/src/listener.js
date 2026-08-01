@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { detectWakeWord, loadSttConfig, transcribe } from "./stt.js";
+import { leJsonConfig } from "./json-config.js";
 
 function baseDir() {
   return process.env.JARVIS_AGENT_DIR || path.join(os.homedir(), ".jarvis-agente");
@@ -54,17 +55,21 @@ export function defaults() {
     enabled: false,           // escuta contínua é opt-in: microfone sempre ligado é decisão do usuário
     recorder: "auto",         // auto | ffmpeg | arecord | sox
     device: "",               // vazio = padrão do sistema
+    /* Caminho absoluto do ffmpeg, quando ele NÃO está no PATH.
+       Existe porque o instalador dependia do `winget` pra trazer o ffmpeg — e
+       winget não é universal: na máquina do Victor ele simplesmente não existe
+       (vem no "Instalador de Aplicativo" da Microsoft Store). Sem isto, a única
+       saída era mexer no PATH do usuário, que é invasivo e só vale pra
+       processos abertos DEPOIS. Mesmo padrão do whisper, que já guarda o
+       `binary` em stt.json. Vazio = procura "ffmpeg" no PATH, como antes. */
+    ffmpegPath: "",
     chunkSec: LIMITES.chunkSec.default,
     pausaMs: LIMITES.pausaMs.default,
   };
 }
 
 export function loadConfig() {
-  try {
-    return { ...defaults(), ...JSON.parse(fs.readFileSync(configFile(), "utf8")) };
-  } catch {
-    return defaults();
-  }
+  return { ...defaults(), ...(leJsonConfig(configFile()) || {}) };
 }
 
 function clamp(valor, faixa) {
@@ -129,8 +134,15 @@ export const RECORDERS = {
   },
 };
 
+/** O executável de um gravador, respeitando o caminho configurado.
+ *  Só o ffmpeg tem essa saída — é o único que o instalador baixa. */
+function binDe(nome, cfg) {
+  if (nome === "ffmpeg" && cfg?.ffmpegPath) return cfg.ffmpegPath;
+  return RECORDERS[nome].bin;
+}
+
 /** Qual gravador existe nesta máquina? Ordem por plataforma. */
-export function detectRecorder(preferido = "auto") {
+export function detectRecorder(preferido = "auto", cfg = loadConfig()) {
   const ordem = preferido !== "auto" && RECORDERS[preferido]
     ? [preferido]
     : os.platform() === "win32" ? ["ffmpeg"]
@@ -140,24 +152,28 @@ export function detectRecorder(preferido = "auto") {
   const tentados = [];
   for (const nome of ordem) {
     const r = RECORDERS[nome];
-    const teste = spawnSync(r.bin, r.check, { shell: false, timeout: 4000 });
+    const bin = binDe(nome, cfg);
+    const teste = spawnSync(bin, r.check, { shell: false, timeout: 4000 });
     // erro pode ser ENOENT (não instalado) — e alguns binários saem !=0 no --version
-    if (!teste.error) return { ok: true, recorder: nome, bin: r.bin };
-    tentados.push(`${r.bin} (${teste.error.code || "falhou"})`);
+    if (!teste.error) return { ok: true, recorder: nome, bin };
+    tentados.push(`${bin} (${teste.error.code || "falhou"})`);
   }
   return {
     ok: false,
     tried: tentados,
     reason: "nenhum gravador de áudio encontrado",
+    /* A dica antiga mandava usar o winget — que não existe em toda máquina, e
+       não existia justamente na do Victor. Rodar o instalador de novo resolve
+       sem depender dele: ele baixa o ffmpeg direto e grava o caminho aqui. */
     hint: os.platform() === "win32"
-      ? "instale o ffmpeg e deixe ffmpeg.exe no PATH (winget install Gyan.FFmpeg)"
+      ? "rode o instalador de vozes de novo (ele baixa o ffmpeg), ou deixe ffmpeg.exe no PATH"
       : "instale o alsa-utils (arecord) ou o ffmpeg",
   };
 }
 
 /** O que falta pra escuta contínua funcionar. É isto que a aba de config mostra. */
 export function checkSetup(cfg = loadConfig()) {
-  const gravador = detectRecorder(cfg.recorder);
+  const gravador = detectRecorder(cfg.recorder, cfg);
   const stt = loadSttConfig();
   const modelo = path.join(stt.modelsDir, `ggml-${stt.model}.bin`);
   const temModelo = fs.existsSync(modelo);
@@ -197,7 +213,7 @@ function gravaTrecho(recorder, destino, cfg) {
   return new Promise((resolve) => {
     let proc;
     try {
-      proc = spawn(r.bin, r.args(destino, cfg), { shell: false, stdio: ["ignore", "ignore", "pipe"] });
+      proc = spawn(binDe(recorder, cfg), r.args(destino, cfg), { shell: false, stdio: ["ignore", "ignore", "pipe"] });
     } catch (e) {
       resolve({ ok: false, reason: String(e.message) });
       return;
