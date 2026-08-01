@@ -313,7 +313,7 @@ if not exist "requirements.txt" (
     set "USA_PYPROJECT=1"
   ) else (
     echo      [ATENCAO] sem requirements.txt nem pyproject.toml; veja o README de %REPO%.
-    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
   )
 )
 
@@ -321,7 +321,7 @@ if defined ALINHA_TORCH (
   echo      instalando torch 2.6.0 ^(antes das dependencias, pra nao ter que trocar depois^)...
   pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 || (
     echo      [ERRO] nao consegui instalar o torch.
-    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
   )
 )
 
@@ -329,7 +329,7 @@ if defined USA_PYPROJECT (
   echo      sem requirements.txt; instalando pelo pyproject.toml...
   pip install . || (
     echo      [ERRO] instalacao pelo pyproject.toml falhou. Veja o README de %REPO%.
-    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
   )
 ) else (
   call :requirements_sem_torch
@@ -337,7 +337,7 @@ if defined USA_PYPROJECT (
     echo      [ERRO] instalacao das dependencias falhou.
     echo             "Could not find a version ... torch" = Python incompativel.
     echo             erro de compilador ou CUDA = placa de video.
-    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
   )
 )
 if defined MODULO (
@@ -346,7 +346,7 @@ if defined MODULO (
     echo      faltou o motor ^(%MODULO%^); instalando %PACOTE%...
     pip install %PACOTE% || (
       echo      [ERRO] nao consegui instalar %PACOTE%.
-      popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+      popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
     )
   )
 )
@@ -362,7 +362,7 @@ if defined ALINHA_TORCH (
     echo             recria-lo limpo.
     call deactivate >nul 2>nul
     rmdir /s /q ".venv"
-    popd ^& endlocal ^& set "FALHOU=%FALHOU% %~2" ^& exit /b 0
+    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
   )
 )
 if defined DESLIGA_MARCA (

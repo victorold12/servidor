@@ -21,6 +21,11 @@ import { loadVoiceConfig, voiceSamplePath } from "./voice-config.js";
 const TIMEOUT_MS = 45_000;
 
 /** Motor -> como montar a requisição. Só isto difere entre eles. */
+/* Uma das vozes prontas que o Chatterbox-TTS-Server instala junto (ele traz 28,
+   em `voices/`). Serve de padrão pra quem ainda não clonou a própria voz — sem
+   isso a requisição sai sem `voice` e o servidor recusa com 422. */
+const VOZ_PADRAO_CHATTERBOX = "Alice.wav";
+
 const ENGINES = {
   chatterbox: {
     url: (cfg) => `${cfg.chatterboxUrl}/v1/audio/speech`,
@@ -34,8 +39,21 @@ const ENGINES = {
         temperature: cfg.temperature,
         language: cfg.language,
       };
-      // voz clonada: o servidor recebe o nome do arquivo de referência
-      if (cfg.voice) corpo.voice = cfg.voice;
+      /* `voice` é OBRIGATÓRIO neste servidor — mandar sem ele devolve 422:
+             {"loc":["body","voice"],"msg":"Field required"}
+
+         A versão antiga só preenchia quando havia voz clonada, e o padrão do
+         painel é justamente vazio ("Voz padrão do modelo"). Ou seja: quem
+         instalava tudo certo e apertava Testar sem ter clonado uma voz recebia
+         um erro — o caminho MAIS COMUM era o único quebrado.
+
+         Descoberto pedindo uma frase ao servidor de verdade, na máquina do
+         Victor. Nenhum teste pegava: o CI provava que o modelo carregava, e
+         carregar o modelo não exercita o corpo da requisição.
+
+         O padrão é uma das 28 vozes que o próprio servidor traz, então funciona
+         numa instalação recém-feita, sem depender de amostra nenhuma. */
+      corpo.voice = cfg.voice || VOZ_PADRAO_CHATTERBOX;
       return corpo;
     },
     health: (cfg) => `${cfg.chatterboxUrl}/health`,
