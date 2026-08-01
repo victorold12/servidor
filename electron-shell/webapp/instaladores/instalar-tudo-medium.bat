@@ -128,14 +128,14 @@ echo --- [6/7] Chatterbox (clona a sua voz)
 if defined JARVIS_PULAR_VOZES (
   echo      [pulado] JARVIS_PULAR_VOZES ligado.
 ) else (
-  call :instala_python_repo "https://github.com/devnen/Chatterbox-TTS-Server" "Chatterbox-TTS-Server" 1 chatterbox chatterbox-tts sim sim
+  call :instala_python_repo "https://github.com/devnen/Chatterbox-TTS-Server" "Chatterbox-TTS-Server" 1 chatterbox chatterbox-tts sim sim 915ae289340e10c6047f27f47e22eae9bf350c32
 )
 echo.
 echo --- [7/7] Kokoro (vozes prontas)
 if defined JARVIS_PULAR_VOZES (
   echo      [pulado] JARVIS_PULAR_VOZES ligado.
 ) else (
-  call :instala_python_repo "https://github.com/remsky/Kokoro-FastAPI" "Kokoro-FastAPI" 2
+  call :instala_python_repo "https://github.com/remsky/Kokoro-FastAPI" "Kokoro-FastAPI" 2 "" "" "" "" 91cd44d6805dc04b8945871988ef354cd6d0ca9e
 )
 echo.
 
@@ -301,6 +301,7 @@ set "MODULO=%~4"
 set "PACOTE=%~5"
 set "ALINHA_TORCH=%~6"
 set "DESLIGA_MARCA=%~7"
+set "PIN=%~8"
 set "PY=python"
 if not "%PRECISA312%"=="0" ( py -3.12 --version >nul 2>nul && set "PY=py -3.12" )
 if "%PRECISA312%"=="1" if "%PY%"=="python" (
@@ -312,15 +313,24 @@ where git >nul 2>nul || (
   goto :repo_falhou_cedo
 )
 if exist "%PASTA%" (
-  echo      atualizando...
-  pushd "%PASTA%" & git pull >nul 2>nul & popd
+  echo      buscando o commit testado ^(%PIN:~0,8%^)...
 ) else (
   echo      clonando %REPO% ...
-  git clone --depth 1 "%REPO%" "%PASTA%" || (
+  git clone --quiet "%REPO%" "%PASTA%" || (
     echo      [ERRO] nao consegui clonar.
     goto :repo_falhou_cedo
   )
 )
+pushd "%PASTA%"
+git fetch --quiet origin 2>nul
+git checkout --quiet %PIN% 2>nul
+if errorlevel 1 (
+  echo      [ATENCAO] nao achei o commit testado %PIN%.
+  echo                O upstream deve ter reescrito a historia. Seguindo com
+  echo                a versao mais nova - que NAO foi testada com este app.
+  echo                Se a voz falhar, e o primeiro lugar pra olhar.
+) else ( echo      [ok] fixado no commit testado. )
+popd
 pushd "%PASTA%"
 if exist ".venv" (
   call ".venv\Scripts\activate.bat"
@@ -385,6 +395,23 @@ if defined MODULO (
       goto :repo_falhou
     )
   )
+)
+
+if defined ALINHA_TORCH (
+  echo      alinhando as dependencias que o requirements deixa em conflito...
+  python -c "import transformers,huggingface_hub,sys; from packaging.version import Version as V; sys.exit(0 if V(huggingface_hub.__version__).major>=1 else 1)" >nul 2>nul
+  if errorlevel 1 pip install "huggingface-hub>=1.3.0,<2.0"
+  python -c "import onnx" >nul 2>nul
+  if errorlevel 1 pip install "protobuf>=4.25.1"
+  echo      conferindo se o motor carrega de verdade...
+  python -c "from chatterbox.tts import ChatterboxTTS" >nul 2>nul
+  if errorlevel 1 (
+    echo      [ERRO] o motor instalou mas nao carrega. Rode isto na pasta pra ver a causa:
+    echo             cd /d "%PASTA%"
+    echo             .venv\Scripts\python.exe -c "from chatterbox.tts import ChatterboxTTS"
+    goto :repo_falhou
+  )
+  echo      [ok] o motor carrega.
 )
 if defined ALINHA_TORCH (
   python -c "import torch; torch.zeros(1)" >nul 2>nul
