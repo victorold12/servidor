@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { leJsonConfig } from "./json-config.js";
 
 // Mesmo motivo do voice-config.js: resolvido a cada chamada pra
 // JARVIS_AGENT_DIR poder redirecionar e o teste não mexer no config real.
@@ -34,11 +35,7 @@ function defaults() {
 export { defaults as DEFAULTS_FN };
 
 export function loadSttConfig() {
-  try {
-    return { ...defaults(), ...JSON.parse(fs.readFileSync(configFile(), "utf8")) };
-  } catch {
-    return defaults();
-  }
+  return { ...defaults(), ...(leJsonConfig(configFile()) || {}) };
 }
 
 export function saveSttConfig(entrada = {}) {

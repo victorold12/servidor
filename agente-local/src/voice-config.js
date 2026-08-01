@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { leJsonConfig } from "./json-config.js";
 
 /**
  * Diretório base do agente. Resolvido a cada chamada, e não uma vez no topo do
@@ -91,11 +92,7 @@ export function sanitize(entrada = {}) {
 }
 
 export function loadVoiceConfig() {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(configFile(), "utf8")) };
-  } catch {
-    return { ...DEFAULTS };
-  }
+  return { ...DEFAULTS, ...(leJsonConfig(configFile()) || {}) };
 }
 
 export function saveVoiceConfig(cfg) {

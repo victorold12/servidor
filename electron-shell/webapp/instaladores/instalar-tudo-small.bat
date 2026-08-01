@@ -71,7 +71,18 @@ echo.
 
 REM ============ 4. ffmpeg ============
 echo --- [3/7] ffmpeg
-call :garante "ffmpeg -version" Gyan.FFmpeg ffmpeg https://ffmpeg.org
+ffmpeg -version >nul 2>nul
+if not errorlevel 1 (
+  echo      [ok] ja instalado no PATH.
+) else (
+  if not defined SEMWINGET (
+    echo      tentando pelo winget...
+    winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements >nul 2>nul
+    call :recarrega_path
+  )
+  ffmpeg -version >nul 2>nul
+  if errorlevel 1 call :baixa_ffmpeg
+)
 echo.
 
 REM ============ 5. modelo do whisper ============
@@ -134,7 +145,7 @@ REM e nao acharia nada - a organizacao em pastas viraria justamente o
 REM motivo de nao funcionar. Mescla no stt.json que ja existe, em vez de
 REM sobrescrever: as escolhas de modelo e threads sao preservadas.
 echo --- Apontando o Agente Local pras pastas
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try{ $d=Join-Path $env:USERPROFILE '.jarvis-agente'; if(-not (Test-Path $d)){ New-Item -ItemType Directory -Path $d | Out-Null } $f=Join-Path $d 'stt.json'; $c=$null; if(Test-Path $f){ try{ $c=Get-Content $f -Raw | ConvertFrom-Json }catch{ $c=$null } } if($null -eq $c){ $c=New-Object PSObject } $c | Add-Member -NotePropertyName modelsDir -NotePropertyValue '%WMOD%' -Force; $exe=Join-Path '%WPROG%' 'whisper-cli.exe'; if(Test-Path $exe){ $c | Add-Member -NotePropertyName binary -NotePropertyValue $exe -Force } $c | Add-Member -NotePropertyName model -NotePropertyValue 'small' -Force; $c | ConvertTo-Json -Depth 5 | Set-Content $f -Encoding UTF8; Write-Host '      [ok] stt.json atualizado.' }catch{ Write-Host ('      [aviso] nao consegui escrever stt.json: ' + $_.Exception.Message) }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try{ $d=Join-Path $env:USERPROFILE '.jarvis-agente'; if(-not (Test-Path $d)){ New-Item -ItemType Directory -Path $d | Out-Null } $f=Join-Path $d 'stt.json'; $c=$null; if(Test-Path $f){ try{ $c=Get-Content $f -Raw | ConvertFrom-Json }catch{ $c=$null } } if($null -eq $c){ $c=New-Object PSObject } $c | Add-Member -NotePropertyName modelsDir -NotePropertyValue '%WMOD%' -Force; $exe=Join-Path '%WPROG%' 'whisper-cli.exe'; if(Test-Path $exe){ $c | Add-Member -NotePropertyName binary -NotePropertyValue $exe -Force } $c | Add-Member -NotePropertyName model -NotePropertyValue 'small' -Force; [System.IO.File]::WriteAllText($f, ($c | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding $false)); Write-Host '      [ok] stt.json atualizado.' }catch{ Write-Host ('      [aviso] nao consegui escrever stt.json: ' + $_.Exception.Message) }"
 echo.
 
 REM ============ papeis que ficam na pasta ============
@@ -252,6 +263,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "try{ $L=Get-Content 'req
 if not exist "requirements-jarvis.txt" copy /y "requirements.txt" "requirements-jarvis.txt" >nul
 exit /b 0
 
+:baixa_ffmpeg
+if exist "%RAIZ%\ffmpeg\ffmpeg.exe" (
+  echo      [ok] ja baixado aqui.
+  goto :aponta_ffmpeg
+)
+echo      baixando do GitHub ^(sem winget^)...
+if not exist "%RAIZ%\ffmpeg" mkdir "%RAIZ%\ffmpeg"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try{ $r=Invoke-RestMethod -Uri 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest' -Headers @{'User-Agent'='jarvis'}; $a=$r.assets | Where-Object { $_.name -match 'win64' -and $_.name -match 'gpl' -and $_.name -like '*.zip' -and $_.name -notmatch 'shared' } | Select-Object -First 1; if(-not $a){ throw ('nenhum anexo win64 nesta release: ' + (($r.assets | ForEach-Object { $_.name }) -join ', ')) } Write-Host ('      achei: ' + $a.name); $z=Join-Path $env:TEMP $a.name; Invoke-WebRequest -Uri $a.browser_download_url -OutFile $z; $tmp=Join-Path $env:TEMP 'jarvis-ffmpeg'; if(Test-Path $tmp){ Remove-Item $tmp -Recurse -Force } Expand-Archive -Path $z -DestinationPath $tmp -Force; $exe=Get-ChildItem -Path $tmp -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1; if(-not $exe){ throw 'baixou e extraiu, mas nao achei ffmpeg.exe dentro' } Copy-Item $exe.FullName (Join-Path '%RAIZ%\ffmpeg' 'ffmpeg.exe') -Force; Remove-Item $z,$tmp -Recurse -Force; Write-Host '      [ok] baixado.'; exit 0 }catch{ Write-Host ('      [ERRO] ' + $_.Exception.Message); exit 1 }"
+if errorlevel 1 (
+  echo      Pegue o ffmpeg a mao em https://ffmpeg.org/download.html
+  echo      e ponha ffmpeg.exe em: %RAIZ%\ffmpeg
+  set "FALHOU=%FALHOU% ffmpeg"
+  exit /b 0
+)
+
+:aponta_ffmpeg
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try{ $d=Join-Path $env:USERPROFILE '.jarvis-agente'; if(-not (Test-Path $d)){ New-Item -ItemType Directory -Path $d | Out-Null } $f=Join-Path $d 'listener.json'; $c=$null; if(Test-Path $f){ try{ $c=Get-Content $f -Raw | ConvertFrom-Json }catch{ $c=$null } } if($null -eq $c){ $c=New-Object PSObject } $c | Add-Member -NotePropertyName ffmpegPath -NotePropertyValue (Join-Path '%RAIZ%\ffmpeg' 'ffmpeg.exe') -Force; [System.IO.File]::WriteAllText($f, ($c | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding $false)); Write-Host '      [ok] a escuta ja sabe onde achar o ffmpeg.' }catch{ Write-Host ('      [aviso] nao consegui escrever listener.json: ' + $_.Exception.Message) }"
+exit /b 0
+
 :confere_tamanho
 if not defined WMB ( echo      [aviso] nao consegui medir o arquivo; seguindo. & exit /b 0 )
 if %WMB% LSS 400 (
@@ -275,11 +305,11 @@ set "PY=python"
 if not "%PRECISA312%"=="0" ( py -3.12 --version >nul 2>nul && set "PY=py -3.12" )
 if "%PRECISA312%"=="1" if "%PY%"=="python" (
   echo      [pulado] precisa do Python 3.12, que nao esta disponivel.
-  endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+  goto :repo_falhou_cedo
 )
 where git >nul 2>nul || (
   echo      [pulado] precisa do Git.
-  endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+  goto :repo_falhou_cedo
 )
 if exist "%PASTA%" (
   echo      atualizando...
@@ -288,7 +318,7 @@ if exist "%PASTA%" (
   echo      clonando %REPO% ...
   git clone --depth 1 "%REPO%" "%PASTA%" || (
     echo      [ERRO] nao consegui clonar.
-    endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    goto :repo_falhou_cedo
   )
 )
 pushd "%PASTA%"
@@ -313,7 +343,7 @@ if not exist "requirements.txt" (
     set "USA_PYPROJECT=1"
   ) else (
     echo      [ATENCAO] sem requirements.txt nem pyproject.toml; veja o README de %REPO%.
-    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    goto :repo_falhou
   )
 )
 
@@ -321,15 +351,21 @@ if defined ALINHA_TORCH (
   echo      instalando torch 2.6.0 ^(antes das dependencias, pra nao ter que trocar depois^)...
   pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 || (
     echo      [ERRO] nao consegui instalar o torch.
-    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    goto :repo_falhou
   )
 )
 
 if defined USA_PYPROJECT (
   echo      sem requirements.txt; instalando pelo pyproject.toml...
   pip install . || (
-    echo      [ERRO] instalacao pelo pyproject.toml falhou. Veja o README de %REPO%.
-    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    echo      [ERRO] instalacao pelo pyproject.toml falhou. As duas causas comuns:
+    echo             "CMAKE_C_COMPILER not set" ou "Microsoft Visual C++ 14.0"
+    echo                 = alguma dependencia compila do zero e falta compilador.
+    echo                   Instale o "Build Tools for Visual Studio" ^(varios GB^):
+    echo                   https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    echo             qualquer outra coisa = veja o README de %REPO%
+    echo             O Kokoro e o RESERVA: sem ele o Chatterbox continua falando.
+    goto :repo_falhou
   )
 ) else (
   call :requirements_sem_torch
@@ -337,7 +373,7 @@ if defined USA_PYPROJECT (
     echo      [ERRO] instalacao das dependencias falhou.
     echo             "Could not find a version ... torch" = Python incompativel.
     echo             erro de compilador ou CUDA = placa de video.
-    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    goto :repo_falhou
   )
 )
 if defined MODULO (
@@ -346,7 +382,7 @@ if defined MODULO (
     echo      faltou o motor ^(%MODULO%^); instalando %PACOTE%...
     pip install %PACOTE% || (
       echo      [ERRO] nao consegui instalar %PACOTE%.
-      popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+      goto :repo_falhou
     )
   )
 )
@@ -362,7 +398,7 @@ if defined ALINHA_TORCH (
     echo             recria-lo limpo.
     call deactivate >nul 2>nul
     rmdir /s /q ".venv"
-    popd & endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
+    goto :repo_falhou
   )
 )
 if defined DESLIGA_MARCA (
@@ -386,3 +422,8 @@ if defined DESLIGA_MARCA if exist "config.yaml" (
 echo      [ok] pronto em %PASTA%
 popd
 endlocal & exit /b 0
+
+:repo_falhou
+popd
+:repo_falhou_cedo
+endlocal & set "FALHOU=%FALHOU% %~2" & exit /b 0
