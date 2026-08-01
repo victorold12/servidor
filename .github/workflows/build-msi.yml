@@ -14,6 +14,12 @@ on:
 jobs:
   build-msi:
     runs-on: windows-latest
+    # Sem isto o job herda as 6 HORAS padrão do GitHub. E herdou: o build do
+    # 1.2.0 rodou das 05:57 às 11:57 porque um teste de integração falhou e
+    # deixou o uvicorn vivo, pendurando o `node --test`. O `kill` que faltava
+    # está consertado em agente-local/test/_backend.js, mas o limite fica como
+    # rede: build de .msi leva ~10 min, e nada aqui justifica passar de 45.
+    timeout-minutes: 45
     # Pra cravar a tag da versão no fim, quando o build dá certo.
     permissions:
       contents: write

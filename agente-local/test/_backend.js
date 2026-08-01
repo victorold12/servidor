@@ -64,7 +64,30 @@ export async function sobeBackend({ token }) {
     }
   );
   const base = `http://127.0.0.1:${port}`;
-  await esperaSaude(base, proc);
+  /* ===== Matar o uvicorn quando ele NÃO sobe =====
+     Sem este try/catch, `esperaSaude` estourava e o processo ficava vivo. O
+     `node --test` não termina enquanto houver filho, então UMA falha de
+     integração transformava a suíte inteira num processo pendurado.
+     Aconteceu: o build do .msi 1.2.0 rodou das 05:57 às 11:57 e foi cancelado
+     pelo limite de 6 horas do GitHub — a última linha do log era este teste
+     falhando, 15 segundos depois de começar. Seis horas de runner por um
+     `kill` que faltava.
+
+     `taskkill /T` no Windows: o uvicorn com --reload ou workers cria netos, e
+     `proc.kill()` sozinho derruba só o pai, deixando quem de fato segura a
+     porta (e o event loop) de pé. */
+  try {
+    await esperaSaude(base, proc);
+  } catch (err) {
+    try {
+      if (process.platform === "win32") {
+        spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
+      } else {
+        proc.kill("SIGKILL");
+      }
+    } catch { /* já morreu: é o estado desejado */ }
+    throw err;
+  }
   return { proc, base, port };
 }
 
