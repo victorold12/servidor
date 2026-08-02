@@ -23,7 +23,30 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config import settings
+from ..contexto import comprime
 from ..openrouter import chat, resolve_key
+
+# Teto de contexto do laço autônomo.
+#
+# ESCOLHIDO MEDINDO, não por instinto. A primeira tentativa foi 24000 — número
+# que vinha de "cabe em qualquer modelo do catálogo", que é outro problema.
+# Numa tarefa de 12 passos lendo arquivos, economizava 12%: o teto era tão alto
+# que a compressão quase nunca disparava.
+#
+# A medição, mesma tarefa, somando os tokens de ENTRADA das 12 voltas
+# (208 mil sem compressão):
+#
+#     teto     enviados   economia   contexto vivo no fim
+#     24000     184.026        12%                 23.254
+#     16000     113.746        45%                 13.214
+#     12000      97.682        53%                  9.198   <- escolhido
+#      8000      76.550        63%                  7.651
+#      4000      46.951        77%                  3.963
+#
+# 12000 corta mais da metade do custo e ainda deixa ~9 mil tokens de histórico
+# vivo, que é bastante pra um agente no meio de uma tarefa. Descer mais compra
+# economia com burrice, e resposta ruim custa a rodada inteira de novo.
+TETO_CONTEXTO_TOKENS = 12000
 from ..services import scrape_url, web_search
 from .. import store
 
@@ -192,6 +215,21 @@ async def autonomous(
             ]
 
             for step in range(max_steps):
+                # COMPRESSÃO ANTES DE CADA VOLTA.
+                #
+                # É aqui que o dinheiro vaza: a lista inteira é reenviada a cada
+                # passo, então o primeiro prompt é cobrado `max_steps` vezes — e
+                # as observações de ferramenta que entram no meio (conteúdo de
+                # arquivo, resultado de busca) são as maiores mensagens da
+                # conversa. O custo cresce com o quadrado dos passos.
+                #
+                # O relatório vai pro fio: comprimir em silêncio esconderia a
+                # causa de uma resposta pior, porque o modelo passa a não ver
+                # algo que via e ninguém liga uma coisa à outra.
+                messages, rel_ctx = comprime(messages, teto_tokens=TETO_CONTEXTO_TOKENS)
+                if rel_ctx.comprimiu:
+                    yield sse("contexto", detalhe=str(rel_ctx),
+                              economia=rel_ctx.economia, coube=rel_ctx.coube)
                 data = await chat(messages, key=key, model=body.model, tools=TOOLS)
                 _acc_usage(data, usage_total)
                 message = data["choices"][0]["message"]

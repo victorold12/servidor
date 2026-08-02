@@ -13,7 +13,7 @@ import time
 
 import httpx
 
-from . import telemetria
+from . import cache_prompt, cache_semantico, telemetria
 from .config import settings
 
 
@@ -36,10 +36,33 @@ async def _post_chat(base: str, payload: dict, headers: dict) -> dict:
         return resp.json()
 
 
+def _pergunta_do_fim(messages: list[dict]) -> str:
+    for m in reversed(messages or []):
+        if m.get("role") == "user":
+            c = m.get("content")
+            return c if isinstance(c, str) else ""
+    return ""
+
+
+def _resposta_de_cache(texto: str, model: str) -> dict:
+    """Molda a resposta guardada no formato que todo mundo já sabe ler.
+
+    `usage` zerado e `_cache` marcado: a chamada não aconteceu, então contar
+    tokens aqui inflaria o gasto medido com um gasto que não houve — e o painel
+    de custo passaria a mentir na direção contrária.
+    """
+    return {
+        "choices": [{"message": {"role": "assistant", "content": texto},
+                     "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "model": model, "_provider": "cache", "_cache": True,
+    }
+
+
 async def chat(messages: list[dict], key: str, model: str | None = None,
                tools: list | None = None, plugins: list | None = None,
                origem: str = "chat", engine: str | None = None,
-               extra: dict | None = None) -> dict:
+               extra: dict | None = None, cache: bool = True) -> dict:
     """Fala com o OpenRouter. Se não houver chave (ou a chamada falhar) e existir
     um Ollama configurado, cai nele — e marca `_provider` na resposta, pra quem
     chamou poder dizer ao usuário quem respondeu de verdade.
@@ -47,7 +70,25 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
     Sem chave E sem fallback, levanta. Silenciar isso faria o usuário achar que
     falou com um modelo forte quando não falou com nenhum.
     """
-    payload: dict = {"model": model or settings.default_model, "messages": messages}
+    modelo_final = model or settings.default_model
+
+    # ---- Cache de resposta, ANTES de qualquer rede ----
+    #
+    # `cache_semantico.cacheavel` já recusa pergunta que depende do relógio, do
+    # estado pessoal, ou que ia disparar ação — por isso dá pra ligar por
+    # padrão. Quem sabe que a resposta não pode repetir passa `cache=False`.
+    ctx_cache = ""
+    if cache and not tools:
+        ctx_cache = cache_semantico.digital_contexto(messages, modelo_final)
+        guardada, _motivo = cache_semantico.cache.consulta(
+            _pergunta_do_fim(messages), contexto=ctx_cache)
+        if guardada is not None:
+            return _resposta_de_cache(guardada, modelo_final)
+
+    # ---- Cache de PREFIXO do provedor (coisa diferente: não guarda resposta) ----
+    messages = cache_prompt.prepara(messages, modelo_final, origem=origem)[0]
+
+    payload: dict = {"model": modelo_final, "messages": messages}
     if tools:
         payload["tools"] = tools
     if plugins:
@@ -82,6 +123,14 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
         telemetria.registra(provider=prov, model=mdl, origem=origem,
                             tokens_in=ent, tokens_out=sai, custo_usd=custo,
                             ms=int((time.monotonic() - inicio) * 1000))
+        # Guarda pra próxima. Best-effort: cache que derruba a resposta que ele
+        # deveria acelerar é o oposto do que serve.
+        if ctx_cache:
+            try:
+                cache_semantico.cache.guarda(
+                    _pergunta_do_fim(messages), content_of(data), contexto=ctx_cache)
+            except Exception:
+                pass
         return data
 
     def _mede_falha(erro: Exception) -> None:

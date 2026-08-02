@@ -107,6 +107,10 @@ def _roda_resposta(caso: Caso, cfg) -> tuple[str, dict]:
         [{"role": "user", "content": caso.entrada}],
         key=cfg.chave, model=cfg.modelo or None,
         origem="avaliacao", engine=cfg.engine,
+        # SEM CACHE, sempre. O arnês existe pra medir o modelo; medindo o cache
+        # ele mediria a si mesmo. A segunda execução acertaria tudo em 0ms e
+        # esconderia justamente a regressão que ele deveria achar.
+        cache=False,
         # TEMPERATURA ZERO, e isto não é detalhe.
         #
         # A primeira comparação deste arnês acusou duas regressões: uma que eu
