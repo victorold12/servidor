@@ -86,7 +86,10 @@ test("speak usa o Chatterbox quando ele responde", async () => {
   assert.equal(r.fallback, false);
   assert.equal(r.mime, "audio/wav");
   assert.ok(r.bytes > 0);
-  assert.equal(corpoVisto.input, "olá senhor");
+  /* Com ponto no fim: o `speak` passa o texto por `paraFala()` antes de mandar
+     pro motor, e ela fecha a frase. Não é enfeite — sem pontuação final o
+     motor não sabe que a frase acabou e corta a última sílaba. */
+  assert.equal(corpoVisto.input, "olá senhor.");
   assert.equal(corpoVisto.exaggeration, 0.7, "manda a calibração pro motor");
 });
 

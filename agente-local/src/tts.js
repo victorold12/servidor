@@ -17,6 +17,7 @@
  * navegador (Web Speech), que sempre existe.
  */
 import { loadVoiceConfig, voiceSamplePath } from "./voice-config.js";
+import { paraFala } from "./fala-natural.js";
 
 const TIMEOUT_MS = 45_000;
 
@@ -165,7 +166,11 @@ async function falarCom(engine, texto, cfg) {
  * TTS instalado" é estado normal e o chamador precisa poder decidir.
  */
 export async function speak(texto, overrides = {}) {
-  const limpo = String(texto || "").trim();
+  /* Prepara pra ser FALADO, não lido: markdown, emoji, URL e caminho de
+     arquivo saem daqui. O motor não sabe que `**` é formatação — ele soletra.
+     Fica no `speak` e não em quem chama pra valer em TODOS os caminhos (painel,
+     wake word, ditado) sem ninguém precisar lembrar. */
+  const limpo = paraFala(texto);
   if (!limpo) return { ok: false, reason: "texto vazio" };
 
   const cfg = { ...loadVoiceConfig(), ...overrides };
