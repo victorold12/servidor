@@ -9,9 +9,11 @@ Duas formas de chamar: `chat` (espera a resposta inteira) e `chat_stream`
 aparecer aos poucos no painel; o resto do backend segue usando `chat`.
 """
 import json
+import time
 
 import httpx
 
+from . import telemetria
 from .config import settings
 
 
@@ -35,7 +37,8 @@ async def _post_chat(base: str, payload: dict, headers: dict) -> dict:
 
 
 async def chat(messages: list[dict], key: str, model: str | None = None,
-               tools: list | None = None, plugins: list | None = None) -> dict:
+               tools: list | None = None, plugins: list | None = None,
+               origem: str = "chat") -> dict:
     """Fala com o OpenRouter. Se não houver chave (ou a chamada falhar) e existir
     um Ollama configurado, cai nele — e marca `_provider` na resposta, pra quem
     chamou poder dizer ao usuário quem respondeu de verdade.
@@ -57,9 +60,30 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
         data["_provider"] = "ollama"
         return data
 
+    inicio = time.monotonic()
+
+    async def _mede(data: dict) -> dict:
+        """Registra a chamada que deu certo. Fica DENTRO do `chat` porque o
+        provedor real só é conhecido aqui — o fallback pro Ollama acontece no
+        meio, e medir por fora atribuiria o custo ao provedor errado."""
+        prov = data.get("_provider", "?")
+        mdl = settings.ollama_model if prov == "ollama" else (model or settings.default_model)
+        ent, sai = telemetria.uso_de(data)
+        # Local é de graça de verdade: 0.0, não None. Ver a regra 2 do módulo.
+        custo = 0.0 if prov == "ollama" else await telemetria.estima_custo(mdl, ent, sai)
+        telemetria.registra(provider=prov, model=mdl, origem=origem,
+                            tokens_in=ent, tokens_out=sai, custo_usd=custo,
+                            ms=int((time.monotonic() - inicio) * 1000))
+        return data
+
+    def _mede_falha(erro: Exception) -> None:
+        telemetria.registra(provider="openrouter", model=model or settings.default_model,
+                            origem=origem, ms=int((time.monotonic() - inicio) * 1000),
+                            ok=False, erro=str(erro)[:200])
+
     if not key:
         if ollama_ready():
-            return await _local()
+            return await _mede(await _local())
         raise ValueError("Sem chave do OpenRouter (envie no header X-OR-Key ou configure OPENROUTER_API_KEY).")
 
     headers = {
@@ -69,12 +93,13 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
     }
     try:
         data = await _post_chat(settings.openrouter_base, payload, headers)
-    except Exception:
+    except Exception as e:
+        _mede_falha(e)
         if ollama_ready():
-            return await _local()          # sem internet: o local salva a conversa
+            return await _mede(await _local())   # sem internet: o local salva a conversa
         raise
     data["_provider"] = "openrouter"
-    return data
+    return await _mede(data)
 
 
 async def _stream_once(base: str, payload: dict, headers: dict):
@@ -145,7 +170,52 @@ async def _stream_once(base: str, payload: dict, headers: dict):
 
 
 async def chat_stream(messages: list[dict], key: str, model: str | None = None,
-                      tools: list | None = None):
+                      tools: list | None = None, origem: str = "chat"):
+    """Streaming instrumentado. Envelopa `_chat_stream` sem alterar em nada o
+    que é emitido — quem consome não percebe diferença.
+
+    Envelope em vez de medir por dentro porque o gerador tem três saídas (sem
+    chave, OpenRouter, fallback local) e medir nas três duplicaria a lógica em
+    lugares que precisam divergir com o tempo.
+
+    O custo é calculado com `estima_custo_cache` (síncrono) de propósito: este
+    bloco roda em `finally`, e `await` ali levanta RuntimeError quando o cliente
+    desconecta no meio do streaming. Por isso o preço é aquecido ANTES do laço,
+    onde esperar é seguro.
+    """
+    inicio = time.monotonic()
+    prov, mdl = "?", (model or settings.default_model)
+    ent = sai = None
+    falhou: Exception | None = None
+
+    await telemetria.aquece_precos()
+
+    try:
+        async for ev in _chat_stream(messages, key, model, tools):
+            tipo = ev.get("type")
+            if tipo == "provider":
+                prov = ev.get("name", prov)
+                mdl = ev.get("model", mdl)
+            elif tipo == "usage":
+                ent = ev.get("prompt_tokens", ent)
+                sai = ev.get("completion_tokens", sai)
+            yield ev
+    except Exception as e:
+        falhou = e
+        raise
+    finally:
+        # Local é de graça de verdade (0.0); cache frio é "não sei" (None).
+        custo = 0.0 if prov == "ollama" else telemetria.estima_custo_cache(mdl, ent, sai)
+        telemetria.registra(
+            provider=prov, model=mdl, origem=origem,
+            tokens_in=ent, tokens_out=sai, custo_usd=custo,
+            ms=int((time.monotonic() - inicio) * 1000),
+            ok=falhou is None, erro=(str(falhou)[:200] if falhou else None),
+        )
+
+
+async def _chat_stream(messages: list[dict], key: str, model: str | None = None,
+                       tools: list | None = None):
     """Streaming com o mesmo fallback local do `chat`.
 
     Emite `{"type":"provider","name":...}` antes do primeiro pedaço, pra o painel

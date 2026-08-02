@@ -16,6 +16,8 @@ import time
 
 from fastapi import APIRouter
 
+from .. import telemetria
+
 from .. import db
 from .agents_hub import verify_audit_chain
 
@@ -108,3 +110,22 @@ def usage(days: int = 7):
     if total == 0:
         corpo["note"] = f"nenhuma ação registrada nos últimos {days} dia(s)"
     return corpo
+
+
+@router.get("/analytics/custo")
+def custo(days: int = 7):
+    """Para onde foram os R$ 50 — gasto de MODELO, não ações no PC.
+
+    Endpoint separado do /analytics de propósito. Os dois medem coisas
+    diferentes de fontes diferentes: aquele agrega a auditoria (o que o JARVIS
+    fez na máquina), este agrega as chamadas a modelo. Juntar num só forçaria a
+    escolher uma janela e uma unidade para dois fenômenos que não compartilham
+    nenhuma das duas — e o número resultante não responderia bem a nenhuma das
+    duas perguntas.
+
+    `custo_e_estimativa: true` vai na resposta e não é formalidade: o preço por
+    token vem do catálogo do OpenRouter e muda, inclusive por promoção. Quem
+    exibir isso precisa dizer que é estimativa, senão vira número que mente com
+    confiança — e decisão de orçamento seria tomada em cima dele.
+    """
+    return telemetria.resumo(dias=max(1, min(int(days or 7), 90)))

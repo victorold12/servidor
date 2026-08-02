@@ -186,7 +186,33 @@ CREATE TABLE IF NOT EXISTS documents (
     PRIMARY KEY (user_id, doc_id)
 );
 
+-- Telemetria de chamadas a modelo. O orçamento deste projeto é R$ 50/mês, e
+-- até aqui não havia como saber PARA ONDE eles iam: o /api/analytics agrega a
+-- auditoria (o que o JARVIS fez no PC), que não diz nada sobre gasto de modelo.
+--
+-- Uma linha por chamada, não agregado: agregar cedo joga fora a pergunta que
+-- ainda não foi feita ("qual conversa gastou mais?" não se responde a partir de
+-- um total diário). O volume é pequeno — dezenas por dia, não milhares.
+--
+-- `custo_usd` é NULL quando não deu pra estimar, e nunca 0: zero significaria
+-- "foi de graça", que é o caso do Ollama e é informação diferente de "não sei".
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         REAL NOT NULL,
+    provider   TEXT NOT NULL,           -- openrouter | ollama | ...
+    model      TEXT NOT NULL,
+    origem     TEXT NOT NULL,           -- chat | agent | orchestrate | router | ...
+    tokens_in  INTEGER,
+    tokens_out INTEGER,
+    custo_usd  REAL,                    -- estimativa; NULL = desconhecido
+    ms         INTEGER,
+    ok         INTEGER NOT NULL DEFAULT 1,
+    erro       TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit_log(agent_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_ts ON llm_calls(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_modelo_ts ON llm_calls(model, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_docs_user_at ON documents(user_id, indexed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pending_user_code ON pending_pairings(user_code);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_user ON memory_edges(user_id);
