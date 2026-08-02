@@ -25,6 +25,16 @@ from pydantic import BaseModel
 from ..config import settings
 from ..contexto import comprime
 from ..openrouter import chat, resolve_key
+from ..services import scrape_url, web_search
+from ..skills import carrega_pasta, corpo_seguro, instrucao_do_catalogo
+from .. import store
+
+# Catálogo carregado uma vez, na subida. Só as FICHAS entram no prompt; o corpo
+# de cada skill é carregado sob demanda pela ferramenta `usar_skill`.
+#
+# É a diferença entre 74 e 381 tokens com três skills — e com quarenta, entre
+# uma linha por skill e a conversa inteira. Ver app/skills.py.
+_SKILLS, _SKILLS_PROBLEMAS = carrega_pasta()
 
 # Teto de contexto do laço autônomo.
 #
@@ -47,8 +57,6 @@ from ..openrouter import chat, resolve_key
 # vivo, que é bastante pra um agente no meio de uma tarefa. Descer mais compra
 # economia com burrice, e resposta ruim custa a rodada inteira de novo.
 TETO_CONTEXTO_TOKENS = 12000
-from ..services import scrape_url, web_search
-from .. import store
 
 router = APIRouter()
 
@@ -93,6 +101,14 @@ TOOLS = [
                        "rota. Passe a lista completa e atualizada de passos.",
         "parameters": {"type": "object", "properties": {
             "steps": {"type": "array", "items": {"type": "string"}}}, "required": ["steps"]}}},
+    {"type": "function", "function": {
+        "name": "usar_skill",
+        "description": "Carrega as instruções completas de uma habilidade do catálogo. "
+                       "Use quando o nome e a descrição indicarem que ela serve pra tarefa. "
+                       "Chame ANTES de executar o trabalho que ela descreve.",
+        "parameters": {"type": "object", "properties": {
+            "nome": {"type": "string", "description": "nome exato, como aparece no catálogo"}},
+            "required": ["nome"]}}},
     {"type": "function", "function": {
         "name": "finish",
         "description": "Encerra a tarefa e entrega a resposta final em markdown. Só chame "
@@ -155,6 +171,16 @@ async def _run_tool(name: str, args: dict, state: dict) -> str:
             return json.dumps(await scrape_url(args.get("url", "")), ensure_ascii=False)[:3500]
         if name == "notion_search":
             return await _notion_search(args.get("query", ""))
+        if name == "usar_skill":
+            # `corpo_seguro` e não `registro.corpo`: uma skill é texto de
+            # terceiro entrando no laço de decisão, então passa pelo escâner de
+            # injeção antes de chegar ao modelo. E a recusa vira observação
+            # legível, não exceção — o agente pode seguir sem a skill.
+            corpo, motivo = corpo_seguro(_SKILLS, args.get("nome", ""))
+            if corpo is None:
+                return f"Não foi possível usar essa habilidade: {motivo}"
+            return (f"[instruções da habilidade '{args.get('nome')}'"
+                    + (f" — {motivo}" if motivo else "") + "]\n" + corpo)
         if name == "note":
             txt = (args.get("text") or "").strip()
             if txt:
@@ -208,7 +234,11 @@ async def autonomous(
 
             # ---- 2) Loop de execução ----
             messages = [
-                {"role": "system", "content": _SYSTEM},
+                # O catálogo de habilidades entra aqui, não numa constante:
+                # assim uma skill acrescentada na pasta vale sem reiniciar o
+                # módulo, e o prompt continua sendo montado num lugar só.
+                {"role": "system", "content": _SYSTEM + (
+                    "\n\n" + instrucao_do_catalogo(_SKILLS) if len(_SKILLS) else "")},
                 {"role": "user", "content":
                  f"Tarefa: {body.task}\n\nSeu plano inicial:\n" +
                  "\n".join(f"{i+1}. {s}" for i, s in enumerate(state["plan"]))},
