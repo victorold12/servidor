@@ -162,7 +162,8 @@ async def autonomous(
 
         state = {"plan": [], "notes": []}
         usage_total = {"prompt": 0, "completion": 0, "total": 0}
-        recent_calls: list[str] = []  # pra detectar repetição (anti-loop)
+        recent_calls: list[str] = []  # pra detectar repetição (anti-laço)
+        avisos_laco = 0               # dois avisos ignorados e o laço é interrompido
 
         try:
             if not key:
@@ -219,13 +220,32 @@ async def autonomous(
                         yield sse("done")
                         return
 
-                    # Anti-loop: mesma chamada 3x seguidas → avisa o modelo
+                    # Anti-laço: repetição direta, alternância ou ciclo curto.
+                    # Janela de 8 (era 4) porque ciclo de 3 precisa de 6 pra ser
+                    # visto, e 4 o escondia por completo.
                     sig = fn + json.dumps(args, sort_keys=True, ensure_ascii=False)
                     recent_calls.append(sig)
-                    recent_calls[:] = recent_calls[-4:]
-                    if recent_calls.count(sig) >= 3:
-                        obs = ("Você repetiu esta mesma chamada várias vezes sem progresso. "
-                               "Mude de abordagem ou chame `finish` com o que já tem.")
+                    recent_calls[:] = recent_calls[-8:]
+                    motivo_laco = detecta_laco(recent_calls)
+
+                    if motivo_laco:
+                        avisos_laco += 1
+                        # Avisar é a primeira tentativa: o modelo às vezes muda
+                        # de abordagem. Mas quem ignora duas vezes não vai mudar,
+                        # e cada rodada extra é dinheiro — então encerra com o
+                        # que já tem, em vez de queimar o teto de passos girando.
+                        if avisos_laco >= LACO_AVISOS_ATE_PARAR:
+                            yield sse("observation", tool=fn,
+                                      result=f"[laço interrompido] {motivo_laco}")
+                            texto = (message.get("content") or "").strip()
+                            yield sse("answer", markdown=texto or (
+                                "Parei porque entrei num laço: " + motivo_laco +
+                                ". O que consegui apurar está acima."))
+                            yield sse("usage", **usage_total)
+                            yield sse("done")
+                            return
+                        obs = (f"Você {motivo_laco}. Mude de abordagem ou chame "
+                               "`finish` com o que já tem.")
                     else:
                         yield sse("thought", text=(message.get("content") or "").strip())
                         yield sse("action", tool=fn, args=args, step=step + 1)
@@ -263,6 +283,52 @@ async def autonomous(
             yield sse("error", message=str(exc))
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# Quantos avisos de laço antes de encerrar à força. Dois porque o primeiro pode
+# ser aproveitado: o modelo às vezes muda de abordagem quando avisado. Se
+# ignorar duas vezes, não vai mudar — e cada rodada extra é dinheiro.
+LACO_AVISOS_ATE_PARAR = 2
+
+
+def detecta_laco(assinaturas: list[str]) -> str | None:
+    """O agente está girando em falso? Devolve o motivo, ou None.
+
+    Puro e sem I/O de propósito — dá pra testar todos os padrões sem tocar em
+    rede nem no OpenRouter, que é o mesmo princípio que o /api/orchestrate já
+    aplica ao separar o núcleo da camada HTTP.
+
+    POR QUE O TETO DE PASSOS NÃO BASTA
+
+    `max_steps` pega o laço óbvio. Não pega o caso comum: o agente chama a mesma
+    ferramenta com argumento levemente diferente, parecendo progredir, e gasta o
+    orçamento inteiro sem sair do lugar. Num projeto com R$ 50/mês, um agente em
+    laço queima a cota do mês numa madrugada.
+
+    TRÊS PADRÕES, E O SEGUNDO É O QUE ESCAPAVA
+
+    1. Repetição direta — a mesma chamada N vezes. Já era detectada.
+    2. Alternância (A,B,A,B) — cada assinatura aparece só 2 vezes, então a
+       contagem simples nunca disparava. É o padrão mais comum quando o modelo
+       "verifica" um resultado chamando a ferramenta anterior de novo.
+    3. Ciclo de três (A,B,C,A,B,C) — escapava inteiro.
+
+    Compara SEQUÊNCIAS e não frequências: um ciclo pode ter todas as chamadas
+    com frequência baixa e ainda assim não progredir nunca.
+    """
+    n = len(assinaturas)
+    if n < 3:
+        return None
+
+    if assinaturas[-3:].count(assinaturas[-1]) >= 3:
+        return "repetiu a mesma chamada três vezes seguidas"
+
+    # Ciclo de período 2 ou 3: os últimos p elementos iguais aos p anteriores.
+    for p in (2, 3):
+        if n >= p * 2 and assinaturas[-p:] == assinaturas[-2 * p:-p]:
+            return f"está repetindo um ciclo de {p} chamadas sem progredir"
+
+    return None
 
 
 def _parse_steps(data: dict) -> list[str]:
