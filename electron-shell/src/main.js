@@ -343,6 +343,95 @@ function setupInstaladorVozes() {
     instalacaoVozes.cancela();
     return { ok: true };
   });
+
+  registraModeloLocal();
+}
+
+/* ===========================================================================
+ * MODELO LOCAL — por que a chamada passa por aqui, e não pelo painel
+ *
+ * O painel fala com o OpenRouter direto do navegador, então o caminho óbvio pro
+ * Ollama seria o mesmo: `fetch` pra 127.0.0.1:11434. Não funciona. O Ollama tem
+ * lista de origens própria e recusa com 403 quem não está nela — medido nesta
+ * máquina: `https://…pages.dev` e `Origin: null` levam 403.
+ *
+ * Daria pra pedir ao Victor que abrisse o `OLLAMA_ORIGINS`, mas isso é afrouxar
+ * a trava de um serviço local pra resolver problema nosso, e deixaria qualquer
+ * site aberto no navegador usando a GPU dele. O processo principal do Electron é
+ * Node: não tem origem, não tem CORS, e já é por onde passam as vozes.
+ *
+ * O QUE ESTA PONTE NÃO FAZ
+ *
+ * Ela devolve TEXTO. Não executa nada, não toca em arquivo, não chama
+ * ferramenta. Se um dia a resposta do modelo local virar ação, essa ação passa
+ * pelo gate de 4 camadas como qualquer outra (docs/SEGURANCA-AGENTE-LOCAL.md) —
+ * a ponte não é atalho pra isso.
+ *
+ * O renderer NUNCA escolhe pra onde a chamada vai: a base vem do módulo, e o
+ * nome do modelo é conferido contra o que está instalado. Mesma regra do
+ * instalador de vozes, pelo mesmo motivo — o renderer é a janela que transforma
+ * resposta de modelo em HTML.
+ * =========================================================================== */
+function registraModeloLocal() {
+  const carrega = () => import(agenteLocalModule("ollama.js"));
+
+  ipcMain.handle("jarvis:local-estado", async () => {
+    try {
+      const mod = await carrega();
+      const est = await mod.disponivel();
+      if (!est.ok) return { ok: false, motivo: est.motivo };
+      const escolhido = await mod.escolhe({ precisaFerramentas: true });
+      return {
+        ok: !!escolhido,
+        modelo: escolhido?.nome || null,
+        cabeNaGpu: escolhido?.cabeNaGpu ?? null,
+        motivo: escolhido?.motivo || "nenhum modelo local aceita ferramentas",
+      };
+    } catch (e) {
+      return { ok: false, motivo: String(e.message).slice(0, 120) };
+    }
+  });
+
+  ipcMain.handle("jarvis:local-chat", async (_evt, pedido) => {
+    try {
+      const mod = await carrega();
+      const est = await mod.disponivel();
+      if (!est.ok) return { ok: false, erro: est.motivo };
+
+      /* Lista fechada montada na hora: o renderer só consegue nomear um modelo
+         que JÁ está no disco desta máquina. Nome desconhecido não vira erro —
+         cai no que o gerente de residência escolheria, que é o comportamento
+         útil. */
+      const instalados = new Set((await mod.modelos()).map((m) => m.nome));
+      const pedido_ = String(pedido?.model || "");
+      const modelo = instalados.has(pedido_)
+        ? pedido_
+        : (await mod.escolhe({ precisaFerramentas: true }))?.nome;
+      if (!modelo) return { ok: false, erro: "nenhum modelo local disponível" };
+
+      const mensagens = Array.isArray(pedido?.messages) ? pedido.messages : [];
+      if (!mensagens.length) return { ok: false, erro: "sem mensagens" };
+
+      const teto = Number(pedido?.max_tokens);
+      const r = await fetch(`${mod.base()}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelo,
+          messages: mensagens,
+          max_tokens: Number.isFinite(teto) && teto > 0 ? Math.min(teto, 8192) : 2048,
+        }),
+        /* Teto generoso: modelo grande nesta GPU escorre pra RAM e fica lento,
+           mas responder devagar ainda é melhor que falhar. */
+        signal: AbortSignal.timeout(180000),
+      });
+      if (!r.ok) return { ok: false, erro: `o modelo local respondeu ${r.status}` };
+      const dados = await r.json();
+      return { ok: true, modelo, dados };
+    } catch (e) {
+      return { ok: false, erro: String(e.message).slice(0, 160) };
+    }
+  });
 }
 
 /**

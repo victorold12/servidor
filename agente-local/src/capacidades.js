@@ -138,6 +138,31 @@ export const CAPACIDADES = {
     },
   },
 
+  ollama: {
+    destrava: "responder sem gastar crédito (e mais rápido: ~300ms contra ~2s da nuvem)",
+    /* OPCIONAL de propósito. Sem modelo local o sistema responde igual, pela
+       nuvem — é o que `engines.py` já assume ao tratar ausência de Ollama como
+       estado normal. Marcar como obrigatório faria o doctor sair com código 1
+       numa máquina perfeitamente saudável. */
+    opcional: true,
+    resolver: "abra o Ollama (ou rode: ollama serve) e baixe um modelo: ollama pull qwen2.5:3b",
+    async verifica() {
+      const { disponivel, escolhe } = await import("./ollama.js");
+      const est = await disponivel();
+      if (!est.ok) return est;
+      /* Ter modelo baixado não basta: um modelo sem suporte a `tools` faria o
+         JARVIS responder texto onde deveria chamar o Agente Local. E o que
+         importa pra pessoa é QUAL vai ser usado e se ele cabe na GPU. */
+      const m = await escolhe({ precisaFerramentas: true });
+      if (!m) {
+        return { ok: false, motivo: "há modelos, mas nenhum aceita ferramentas (tente: ollama pull qwen2.5:3b)" };
+      }
+      const onde = m.cabeNaGpu === false ? "parte na CPU, mais lento"
+        : m.cabeNaGpu === null ? "VRAM não medida" : "na GPU";
+      return { ok: true, detalhe: `${m.nome} (${onde})` };
+    },
+  },
+
   cofre: {
     destrava: "guardar o token do backend no cofre do sistema",
     resolver: "reinstale o app — o cofre vem com ele (keytar)",

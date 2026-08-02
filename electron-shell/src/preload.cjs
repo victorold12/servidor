@@ -69,4 +69,25 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
       return () => ipcRenderer.removeListener("jarvis:vozes-progresso", ouvinte);
     },
   },
+
+  /* Modelo local (Ollama) rodando NESTA máquina.
+   *
+   * Existe porque o Ollama recusa a origem do painel com 403 — ver o bloco
+   * MODELO LOCAL em src/main.js. A chamada sai do processo principal, que é
+   * Node e não tem CORS.
+   *
+   * Só trafega texto: mensagens vão, resposta volta. Nada aqui executa.
+   *
+   * A montagem do payload é explícita, campo a campo, e não um repasse do
+   * objeto que o renderer mandou. Repassar inteiro deixaria o renderer
+   * acrescentar chaves que o `fetch` do outro lado interpretaria — e o renderer
+   * é justamente onde resposta de modelo vira HTML. */
+  local: {
+    estado: () => ipcRenderer.invoke("jarvis:local-estado"),
+    chat: (pedido) => ipcRenderer.invoke("jarvis:local-chat", {
+      model: String(pedido?.model || ""),
+      messages: Array.isArray(pedido?.messages) ? pedido.messages : [],
+      max_tokens: Number(pedido?.max_tokens) || undefined,
+    }),
+  },
 });

@@ -41,6 +41,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Lista fechada. O que não está aqui não roda — ver o cabeçalho. */
 export const MODELOS_WHISPER = ["tiny", "base", "small", "medium", "large-v3"];
@@ -248,8 +249,75 @@ export function portaRespondendo(porta, timeout = 400) {
  * O Chatterbox imprime o progresso de um download de 2 GB — ele encheria o pipe
  * e congelaria parecendo que subiu e ficou mudo.
  */
+/**
+ * Acha o gerente de residência do modelo local, que vive no agente-local.
+ *
+ * Dois lugares porque são duas realidades: empacotado, o agente vai pra
+ * `resources/`; em desenvolvimento (e no CI), fica ao lado do electron-shell.
+ *
+ * `fileURLToPath`/`pathToFileURL` e não manipulação de string: no Windows,
+ * `new URL(import.meta.url).pathname` devolve `/C:/Users/VTz%20produti/...` —
+ * com barra sobrando e espaço escapado. Já quebrou dois scripts deste projeto.
+ */
+async function gerenteDaGpu() {
+  const aqui = path.dirname(fileURLToPath(import.meta.url));
+  const candidatos = [
+    process.resourcesPath && path.join(process.resourcesPath, "agente-local", "src", "ollama.js"),
+    path.resolve(aqui, "..", "..", "agente-local", "src", "ollama.js"),
+  ].filter(Boolean);
+  for (const c of candidatos) {
+    if (fs.existsSync(c)) {
+      try {
+        return await import(pathToFileURL(c).href);
+      } catch { /* módulo quebrado é o mesmo que ausente pra este propósito */ }
+    }
+  }
+  return null;
+}
+
+/**
+ * Devolve a VRAM antes de subir a voz.
+ *
+ * POR QUE ISTO PRECISA ACONTECER AQUI
+ *
+ * A GPU desta classe de máquina tem 8 GiB e o desktop já come metade. Se o
+ * modelo de linguagem estiver residente, o Chatterbox carrega no que sobrou —
+ * e quando não sobra, ele NÃO reclama: sobe, atende na 8004 e não fala. É a
+ * falha mais cara já paga neste projeto, e ela é silenciosa.
+ *
+ * A assimetria decide quem cede: o modelo perdendo a GPU cai na nuvem por meio
+ * centavo; a voz perdendo emudece sem avisar. Então o modelo cede, sempre.
+ *
+ * Nunca impede a voz de subir. Mesmo sem conseguir liberar, talvez caiba — o
+ * que não pode é subir ACHANDO que tem folga. Por isso o caso "não sei" vira
+ * aviso explícito no log em vez de silêncio.
+ */
+async function liberaGpuParaVoz(aoLinha) {
+  const mod = await gerenteDaGpu();
+  if (!mod) {
+    aoLinha("[GPU] gerente do modelo local não encontrado — subindo a voz sem liberar VRAM.");
+    return;
+  }
+  const est = await mod.disponivel();
+  if (!est.ok) {
+    /* Sem Ollama no ar não há modelo nosso segurando VRAM. Estado normal na
+       maioria das máquinas, e por isso não é aviso: é informação. */
+    aoLinha("[GPU] nenhum modelo local no ar; a VRAM já está com a voz.");
+    return;
+  }
+  const r = await mod.cedeGpu();
+  if (r.ok) {
+    aoLinha(`[GPU] ${r.motivo}.`);
+  } else {
+    aoLinha(`[GPU] ATENÇÃO: ${r.motivo}. A voz vai subir mesmo assim, mas pode não ter VRAM — `
+      + "se ela atender na porta e não falar, foi isto.");
+  }
+}
+
 export async function ligaMotores({ documentos, aoLinha }) {
   const vivos = [];
+  /* Antes de qualquer spawn: a voz tem prioridade sobre o modelo na GPU. */
+  await liberaGpuParaVoz(aoLinha);
   for (const m of motoresEmDisco(documentos)) {
     if (!m.instalado) {
       aoLinha(`[${m.nome}] não subiu: ${m.motivo}`);

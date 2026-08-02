@@ -137,6 +137,32 @@ código 0, e não é nem o socket abrindo: o Chatterbox já subiu, atendeu na po
 8004 e não falava, porque o modelo tinha falhado ao carregar. Quem confere isso
 é `electron-shell/scripts/sobe-vozes.js`, lendo o stdout do próprio servidor.
 
+**O Ollama recusa a origem do painel com 403.** Ele tem lista de origens
+própria. Medido nesta máquina: `https://…pages.dev` → 403 e `Origin: null` →
+403; `http://localhost:*` e `file://` → 200. Como o app Electron carrega por
+`loadFile`, o caminho direto do navegador não é confiável. Por isso a chamada ao
+modelo local passa pela ponte IPC (`jarvis:local-chat`): o processo principal é
+Node, não tem origem, não tem CORS. Afrouxar o `OLLAMA_ORIGINS` resolveria e
+abriria a GPU pra qualquer site aberto no navegador — não vale.
+
+**A VRAM que o Windows reporta é mentira.** `Win32_VideoController.AdapterRAM`
+é um campo de 32 bits e **satura em 4 GiB**: a RTX 4060 Ti aparece com "4,0 GB"
+tendo 8. Quem dá o número certo é `nvidia-smi`. Uma conta de "quanto cabe" feita
+pelo WMI sai pela metade e parece certa.
+
+**Na GPU, quem cede é o modelo de linguagem — nunca a voz.** São 8 GiB com o
+desktop já comendo ~3,5. A assimetria decide: modelo sem GPU cai na nuvem por
+meio centavo; voz sem GPU falha EM SILÊNCIO (sobe, atende na 8004, não fala).
+`agente-local/src/ollama.js` faz isso, e `ligaMotores` chama antes de todo
+spawn. Nele, `[]` (nada carregado) e "não deu pra consultar" são resultados
+DIFERENTES — confundir os dois faria a voz subir achando que tem folga.
+
+**A suíte do backend roda com `python tests/roda.py`.** Chamar cada
+`test_*.py` direto reprova 6 de 23 no Windows com `UnicodeEncodeError: '✓'`
+— os testes imprimem "✓" e o console usa cp1252. Não é defeito de lógica, mas
+tornava a suíte inexecutável justamente na máquina onde este projeto decidiu
+depurar. Mesma família do `spawn('python3')` que travava a suíte do painel.
+
 **Instalador, voz e `.msi` se depuram MELHOR na máquina do Victor.** O ambiente
 em nuvem é Linux e o alvo é Windows; cada ida ao CI custa ~20 minutos que na
 máquina real seriam segundos. O CI continua indispensável pra provar instalação
