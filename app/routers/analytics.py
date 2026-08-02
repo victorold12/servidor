@@ -129,3 +129,43 @@ def custo(days: int = 7):
     confiança — e decisão de orçamento seria tomada em cima dele.
     """
     return telemetria.resumo(dias=max(1, min(int(days or 7), 90)))
+
+
+@router.post("/analytics/custo")
+def registra_custo(lote: dict):
+    """Recebe chamadas medidas pelo PAINEL.
+
+    Existe porque o painel fala com o OpenRouter DIRETO (OR_BASE em
+    00-core-state.js) — o backend só vê agentes, orquestração e RAG. Instrumentar
+    apenas o backend mediria a minoria do gasto, e um número parcial que se
+    apresenta como total é pior que número nenhum: decisões de orçamento seriam
+    tomadas em cima dele.
+
+    Em lote porque o painel acumula e descarrega: uma requisição por chamada de
+    modelo dobraria o tráfego pra medir tráfego.
+
+    Nada aqui confia no cliente além do que já é dele: são as próprias métricas
+    do usuário, sobre a própria chave. O teto de 500 evita que um laço no
+    navegador encha o banco.
+    """
+    itens = (lote or {}).get("chamadas") or []
+    if not isinstance(itens, list):
+        return {"ok": False, "erro": "esperava {chamadas: [...]}"}
+
+    gravadas = 0
+    for c in itens[:500]:
+        if not isinstance(c, dict):
+            continue
+        telemetria.registra(
+            provider=str(c.get("provider") or "openrouter")[:40],
+            model=str(c.get("model") or "?")[:120],
+            origem=str(c.get("origem") or "painel")[:40],
+            tokens_in=c.get("tokens_in") if isinstance(c.get("tokens_in"), int) else None,
+            tokens_out=c.get("tokens_out") if isinstance(c.get("tokens_out"), int) else None,
+            custo_usd=c.get("custo_usd") if isinstance(c.get("custo_usd"), (int, float)) else None,
+            ms=c.get("ms") if isinstance(c.get("ms"), int) else None,
+            ok=bool(c.get("ok", True)),
+            erro=(str(c["erro"])[:200] if c.get("erro") else None),
+        )
+        gravadas += 1
+    return {"ok": True, "gravadas": gravadas, "recebidas": len(itens)}
