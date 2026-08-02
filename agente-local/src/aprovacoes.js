@@ -41,6 +41,7 @@
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { leJsonConfig } from "./json-config.js";
@@ -50,8 +51,11 @@ const PRAZO_MAX_MS = 24 * 60 * 60 * 1000;    // teto duro: nada dura mais que um
 const MAX_REGISTROS = 500;
 
 function arquivo() {
-  const dir = process.env.JARVIS_AGENT_DIR
-    || path.join(process.env.APPDATA || process.env.HOME || ".", "jarvis-agente");
+  /* Mesmo caminho do resto do agente (apps.js, atalhos.js, listener.js). Eu
+     tinha usado %APPDATA%, que é fora do padrão daqui — e o efeito prático foi
+     teste gravando no perfil real do usuário, porque os testes redirecionam
+     JARVIS_AGENT_DIR e não o APPDATA. */
+  const dir = process.env.JARVIS_AGENT_DIR || path.join(os.homedir(), ".jarvis-agente");
   return path.join(dir, "aprovacoes.json");
 }
 

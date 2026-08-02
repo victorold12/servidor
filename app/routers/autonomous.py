@@ -168,7 +168,11 @@ async def _run_tool(name: str, args: dict, state: dict) -> str:
             hits = await web_search(args.get("query", ""), 5)
             return json.dumps(hits, ensure_ascii=False)[:3500] or "(sem resultados)"
         if name == "fetch_url":
-            return json.dumps(await scrape_url(args.get("url", "")), ensure_ascii=False)[:3500]
+            # O `scrape_url` já devolve `estrutura`: a página descrita por papel
+            # (botão, campo, link), envelopada e marcada como externa. É o que o
+            # agente usa pra decidir o passo seguinte. Ver app/axtree.py.
+            return json.dumps(await scrape_url(args.get("url", "")),
+                              ensure_ascii=False)[:3500]
         if name == "notion_search":
             return await _notion_search(args.get("query", ""))
         if name == "usar_skill":

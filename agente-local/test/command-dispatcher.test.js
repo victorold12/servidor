@@ -1,3 +1,14 @@
+/* Isolamento do diretório do agente.
+ *
+ * A memória de aprovações (aprovacoes.js) grava em disco, e o gate agora a
+ * consulta. Sem redirecionar, o teste escreveria no perfil REAL do usuário e
+ * uma aprovação lembrada vazaria de um caso pro seguinte — foi assim que este
+ * arquivo passou a falhar com "perguntou de novo pro mesmo site: 0 !== 1",
+ * porque a resposta já estava guardada e ninguém perguntou nada.
+ *
+ * Mesma convenção do stt.js e do listener.js. */
+process.env.JARVIS_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-cmd-"));
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

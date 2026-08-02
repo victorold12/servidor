@@ -67,7 +67,25 @@ async def scrape_url(url: str) -> dict:
         "image": meta("og:image"),
         "site": meta("og:site_name") or urlparse(final_url).netloc,
         "text": text,
+        # A página descrita por PAPEL: o que é botão, campo e link. Um agente
+        # precisa disso pra decidir o passo seguinte, e cabe em muito menos
+        # token que o HTML. Calculado AQUI porque é aqui que o html existe —
+        # devolvê-lo cru pra quem chamou faria uma string de 300 KB viajar por
+        # todo consumidor só pra a maioria descartar. Ver app/axtree.py.
+        "estrutura": _estrutura(html, final_url),
     }
+
+
+def _estrutura(html: str, url: str) -> str:
+    """Best-effort: estrutura é enriquecimento. Se falhar, o `text` continua lá,
+    e derrubar a leitura da página por causa do extra seria trocar a função pelo
+    acessório."""
+    try:
+        from .axtree import para_o_modelo
+        texto, _pagina = para_o_modelo(html, origem=f"fetch_url:{url}")
+        return str(texto)[:3000]
+    except Exception:
+        return ""
 
 
 async def web_search(query: str, max_results: int = 6) -> list[dict]:

@@ -44,6 +44,26 @@ if (!faltam.length && !avisos.length) {
   if (faltam.length) console.log(`Faltando: ${faltam.map((c) => c.id).join(", ")}`);
   if (avisos.length) console.log(`Opcionais ausentes: ${avisos.map((c) => c.id).join(", ")}`);
 }
+/* PERFIL — a mesma informação lida como "o que dá pra usar hoje", que é a
+   pergunta que a pessoa realmente tem. A lista de capacidades acima diz o que
+   falta; o perfil diz o que isso significa. */
+const { PERFIS, capacidadesDe, diagnostica, perfilAtual } =
+  await import(pathToFileURL(path.join(raizAgente, "src", "presets.js")).href);
+
+const atual = await perfilAtual(async (ids) => linhas.filter((l) => ids.includes(l.id)));
+console.log("");
+console.log(`perfil atual: ${atual ? PERFIS[atual].titulo : "nenhum — falta o básico"}`);
+
+/* E o próximo degrau, com o passo concreto. Dizer só "falta chatterbox" manda a
+   pessoa caçar; dizer qual perfil ela ganha e por onde começar, não. */
+const ordem = ["texto", "escuta", "voz", "local"];
+const proximo = ordem[ordem.indexOf(atual) + 1] || (atual ? null : "texto");
+if (proximo) {
+  const d = await diagnostica(proximo, async (ids) => linhas.filter((l) => ids.includes(l.id)));
+  console.log(`próximo degrau: ${PERFIS[proximo].titulo} (${PERFIS[proximo].tempo})`);
+  console.log(`  falta: ${d.faltando.map((c) => c.id).join(", ") || "nada"}`);
+  if (d.proximoPasso) console.log(`  comece por: ${d.proximoPasso}`);
+}
 console.log("");
 
 process.exit(faltam.length ? 1 : 0);

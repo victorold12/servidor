@@ -20,6 +20,7 @@ import { runCommand, runFileOp } from "./safe-exec.js";
 import { recordAudit } from "./audit.js";
 import { abreApp, carregaApps, fechaApp, precisaConfirmar, resolveApp, varreApps } from "./apps.js";
 import { apagaAtalho, carregaAtalhos, resolveAtalho, salvaAtalho } from "./atalhos.js";
+import { consulta as consultaAprovacao, registra as registraAprovacao } from "./aprovacoes.js";
 import { probeAll, speak } from "./tts.js";
 import {
   checkSetup, detectWakeWord, loadSttConfig, MODELS, saveSttConfig, transcribe,
@@ -110,7 +111,61 @@ function abridorDoSistema(url) {
  * @param {(action:string)=>boolean} [deps.isUnlocked]
  * @param {string} [deps.auditFilePath]  injetável pra teste
  */
-export function createCommandHandler({ getAllowedRoots, confirmFn, sendAudit, isUnlocked, auditFilePath }) {
+/**
+ * Envolve o `confirmFn` com a memória de aprovações (aprovacoes.js).
+ *
+ * POR QUE AQUI, E NÃO EM CADA PONTO DE CHAMADA
+ *
+ * `handleCommand` pergunta em cinco lugares diferentes (rodar, abrir link,
+ * abrir/fechar app, atalho, arquivo). Ligar a memória em cada um significaria
+ * cinco chances de esquecer — e o que se esquece num deles é justamente o que
+ * volta a perguntar, sem ninguém entender por quê. Envolvendo uma vez, todos
+ * herdam.
+ *
+ * O QUE ELA ACRESCENTA AO `alwaysCache` QUE JÁ EXISTIA
+ *
+ * O cache de sessão morre quando o agente reinicia — e o agente reinicia toda
+ * vez que o PC liga. Na prática, "sempre permitir" durava até o fim do dia de
+ * trabalho e a pergunta voltava na manhã seguinte. A memória persiste, com
+ * prazo declarado e possibilidade de revogar.
+ *
+ * O que ela NÃO muda: Tier 3 continua bloqueado, e a decisão continua sendo
+ * tomada no PC.
+ */
+function comMemoriaDeAprovacao(confirmFn) {
+  /* Sem `confirmFn` não há como perguntar, e o gate trata isso como NEGAR.
+     Envolver mesmo assim transformaria "não dá pra perguntar" em "chame
+     undefined" — e uma memória de aprovação que altera o caminho de negação é
+     exatamente o tipo de coisa que não pode acontecer aqui. */
+  if (typeof confirmFn !== "function") return confirmFn;
+
+  return async function confirmarLembrando(info) {
+    const acao = {
+      programa: info?.command || "",
+      argumentos: [],
+      escopo: info?.reason || "",
+      tier: info?.tier,
+      descricao: info?.command || "",
+    };
+
+    try {
+      const ja = consultaAprovacao(acao);
+      if (ja.aprovado) return "once";   // já autorizado antes; não perguntar de novo
+    } catch { /* memória indisponível = perguntar, que é o padrão seguro */ }
+
+    const decisao = await confirmFn(info);
+
+    /* Só o "sempre" vira memória. "once" é uma autorização pontual, e
+       transformá-la em permanente seria conceder mais do que foi pedido. */
+    if (decisao === "always") {
+      try { registraAprovacao(acao); } catch { /* não lembrar não pode derrubar a ação */ }
+    }
+    return decisao;
+  };
+}
+
+export function createCommandHandler({ getAllowedRoots, confirmFn: confirmCru, sendAudit, isUnlocked, auditFilePath }) {
+  const confirmFn = comMemoriaDeAprovacao(confirmCru);
   // Cache de sessão "sempre permitir" (Tier 2) — vive enquanto o processo do
   // agente vive, some no restart (Seção 13.1: "na mesma sessão"). Um por
   // handler = um por conexão de agente. A chave é a AÇÃO EXATA; ver o comentário

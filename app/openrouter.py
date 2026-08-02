@@ -13,7 +13,7 @@ import time
 
 import httpx
 
-from . import cache_prompt, cache_semantico, telemetria
+from . import cache_prompt, cache_semantico, credenciais, telemetria
 from .config import settings
 
 
@@ -34,6 +34,29 @@ async def _post_chat(base: str, payload: dict, headers: dict) -> dict:
         resp = await client.post(f"{base}/chat/completions", json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()
+
+
+def _sem_credenciais(messages: list[dict]) -> list[dict]:
+    """Limpa segredo reconhecível do que vai pro provedor.
+
+    Devolve a MESMA lista quando não achou nada: alterar o objeto de quem chamou
+    sem motivo criaria diferença sutil entre o que ele acha que mandou e o que
+    foi mandado — e é o tipo de coisa que só aparece num bug esquisito meses
+    depois.
+    """
+    saida, mexeu = [], False
+    for m in messages or []:
+        conteudo = m.get("content")
+        if not isinstance(conteudo, str) or not conteudo:
+            saida.append(m)
+            continue
+        limpo = credenciais.limpa(conteudo)
+        if limpo.limpou:
+            mexeu = True
+            saida.append({**m, "content": limpo.texto})
+        else:
+            saida.append(m)
+    return saida if mexeu else messages
 
 
 def _pergunta_do_fim(messages: list[dict]) -> str:
@@ -71,6 +94,17 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
     falou com um modelo forte quando não falou com nenhum.
     """
     modelo_final = model or settings.default_model
+
+    # ---- Nenhum segredo sai daqui sem passar por uma peneira ----
+    #
+    # O JARVIS lê arquivos da máquina do Victor e manda o conteúdo pro modelo.
+    # Um `read_file` num `.env` ou num log de conexão leva chave de API pro
+    # prompt — e prompt vai pro provedor, entra em log, e pode entrar em treino.
+    # Não é hipótese: o BACKEND_TOKEN deste projeto já trafegou em texto puro.
+    #
+    # Só reescreve quando ACHA algo, pra não pagar cópia de lista em toda
+    # chamada nem alterar o objeto de quem chamou sem necessidade.
+    messages = _sem_credenciais(messages)
 
     # ---- Cache de resposta, ANTES de qualquer rede ----
     #
