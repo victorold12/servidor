@@ -1,0 +1,626 @@
+{
+ "quando": "2026-08-02T09:04:41+00:00",
+ "git": "2e432ff",
+ "engine": "ollama",
+ "modelo": "",
+ "resultados": [
+  {
+   "id": "fala-negrito",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 16,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Isso é muito importante e você precisa saber.",
+   "erro": null
+  },
+  {
+   "id": "fala-titulo",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Resumo do dia. Você tem três reuniões.",
+   "erro": null
+  },
+  {
+   "id": "fala-lista",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Tarefas. comprar pão. pagar a conta. ligar pro médico.",
+   "erro": null
+  },
+  {
+   "id": "fala-codigo",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 32,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Use o comando git status para ver o estado.",
+   "erro": null
+  },
+  {
+   "id": "fala-link",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Veja em documentação oficial os detalhes.",
+   "erro": null
+  },
+  {
+   "id": "fala-emoji",
+   "alvo": "fala",
+   "etiquetas": [
+    "emoji"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Tudo pronto! Deu certo e ficou rápido.",
+   "erro": null
+  },
+  {
+   "id": "fala-tabela",
+   "alvo": "fala",
+   "etiquetas": [
+    "markdown"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": ", Item, Valor, Café, 5 reais,.",
+   "erro": null
+  },
+  {
+   "id": "fala-url-crua",
+   "alvo": "fala",
+   "etiquetas": [
+    "url"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 16,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "O relatório está em um link para consulta.",
+   "erro": null
+  },
+  {
+   "id": "fala-preserva-conteudo",
+   "alvo": "fala",
+   "etiquetas": [
+    "preservacao"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 30,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "O prazo final é dia 15 e o valor é 1.200,00. reais.",
+   "erro": null
+  },
+  {
+   "id": "fala-texto-limpo-passa-ileso",
+   "alvo": "fala",
+   "etiquetas": [
+    "preservacao"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "sem_marcacao",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 32,
+   "custo_usd": 0.0,
+   "engine": null,
+   "saida": "Bom dia, Victor. Você tem duas reuniões hoje e nenhuma pendência.",
+   "erro": null
+  },
+  {
+   "id": "resp-capital-franca",
+   "alvo": "resposta",
+   "etiquetas": [
+    "fato"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    },
+    {
+     "criterio": "nao_vazio",
+     "passou": true,
+     "detalhe": "resposta vazia"
+    }
+   ],
+   "ms": 311,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "Paris",
+   "erro": null
+  },
+  {
+   "id": "resp-descobrimento",
+   "alvo": "resposta",
+   "etiquetas": [
+    "fato"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 297,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "Cabral",
+   "erro": null
+  },
+  {
+   "id": "resp-aritmetica",
+   "alvo": "resposta",
+   "etiquetas": [
+    "calculo"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "contem",
+     "passou": true,
+     "detalhe": ""
+    }
+   ],
+   "ms": 297,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "391",
+   "erro": null
+  },
+  {
+   "id": "resp-portugues",
+   "alvo": "resposta",
+   "etiquetas": [
+    "idioma"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "regex",
+     "passou": true,
+     "detalhe": "não casou: azul"
+    },
+    {
+     "criterio": "nao_vazio",
+     "passou": true,
+     "detalhe": "resposta vazia"
+    }
+   ],
+   "ms": 2108,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "Em um dia limpo e sem nuvens, o céu pode variar de azul claro a uma tonalidade mais escura de azul, dependendo da quantidade de luz solar que atinge nossos olhos. Em dias muito claros ou com pouca nebulosidade, o céu pode parecer mais escuro e profundo, quase preto. No entanto, mesmo nesses casos, ele ainda manterá uma tonalidade azul.",
+   "erro": null
+  },
+  {
+   "id": "resp-obedece-formato",
+   "alvo": "resposta",
+   "etiquetas": [
+    "obediencia"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "regex",
+     "passou": true,
+     "detalhe": "não casou: ^\\W*ok\\W*$"
+    }
+   ],
+   "ms": 250,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "OK",
+   "erro": null
+  },
+  {
+   "id": "resp-nao-inventa",
+   "alvo": "resposta",
+   "etiquetas": [
+    "honestidade"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "regex",
+     "passou": true,
+     "detalhe": "não casou: n[ãa]o (sei|tenho|possuo)|n[ãa]o disponho|desconhe[çc]o|sem (essa )?informa[çc][ãa]o"
+    }
+   ],
+   "ms": 563,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "Não sei o nome do seu cachorro porque você precisa me fornecer essa informação.",
+   "erro": null
+  },
+  {
+   "id": "resp-latencia-local",
+   "alvo": "resposta",
+   "etiquetas": [
+    "desempenho"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "nao_vazio",
+     "passou": true,
+     "detalhe": "resposta vazia"
+    },
+    {
+     "criterio": "ate_ms",
+     "passou": true,
+     "detalhe": "280ms > teto de 20000ms"
+    }
+   ],
+   "ms": 280,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "pronto",
+   "erro": null
+  },
+  {
+   "id": "rota-saudacao",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "simples"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava ollama, veio ollama"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "pergunta simples (0 ponto(s))",
+   "erro": null
+  },
+  {
+   "id": "rota-agradecimento",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "simples"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava ollama, veio ollama"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "pergunta simples (0 ponto(s))",
+   "erro": null
+  },
+  {
+   "id": "rota-pergunta-curta",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "simples"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava ollama, veio ollama"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "pergunta simples (0 ponto(s))",
+   "erro": null
+  },
+  {
+   "id": "rota-codigo",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "dificil"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "pergunta difícil (7 pontos)",
+   "erro": null
+  },
+  {
+   "id": "rota-raciocinio",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "dificil"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "na dúvida (6 pontos)",
+   "erro": null
+  },
+  {
+   "id": "rota-critico-vence-tudo",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "criticidade"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "tarefa crítica: erro sai caro",
+   "erro": null
+  },
+  {
+   "id": "rota-sem-saldo",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "orcamento"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava ollama, veio ollama"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "ollama",
+   "saida": "orçamento do mês esgotado",
+   "erro": null
+  },
+  {
+   "id": "rota-sem-local",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "degradacao"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "não há modelo local nesta máquina",
+   "erro": null
+  },
+  {
+   "id": "rota-conjugacao-explique",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "portugues"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "na dúvida (6 pontos)",
+   "erro": null
+  },
+  {
+   "id": "rota-ferramentas-sobem",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "ferramentas"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "na dúvida (4 pontos)",
+   "erro": null
+  },
+  {
+   "id": "rota-texto-longo",
+   "alvo": "roteamento",
+   "etiquetas": [
+    "dificil"
+   ],
+   "passou": true,
+   "notas": [
+    {
+     "criterio": "engine",
+     "passou": true,
+     "detalhe": "esperava openrouter, veio openrouter"
+    }
+   ],
+   "ms": 0,
+   "custo_usd": 0.0,
+   "engine": "openrouter",
+   "saida": "na dúvida (5 pontos)",
+   "erro": null
+  }
+ ],
+ "resumo": {
+  "total": 28,
+  "passaram": 28,
+  "falharam": 0,
+  "indefinidos": 0,
+  "custo_usd": 0,
+  "ms": 4382
+ }
+}

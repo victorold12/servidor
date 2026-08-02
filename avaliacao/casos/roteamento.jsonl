@@ -1,0 +1,21 @@
+// Roteamento — a decisão de QUAL motor atende, sem chamar motor nenhum.
+// Grátis de rodar e é onde a regressão dói mais: decisão errada é sistemática
+// (erra sempre), enquanto texto ruim é aleatório (erra às vezes).
+{"id": "rota-saudacao", "alvo": "roteamento", "entrada": "oi, bom dia", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "ollama"}], "etiquetas": ["simples"]}
+{"id": "rota-agradecimento", "alvo": "roteamento", "entrada": "valeu, obrigado!", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "ollama"}], "etiquetas": ["simples"]}
+{"id": "rota-pergunta-curta", "alvo": "roteamento", "entrada": "que horas são?", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "ollama"}], "etiquetas": ["simples"]}
+{"id": "rota-codigo", "alvo": "roteamento", "entrada": "Analise este módulo e diga por que o acoplamento cresceu:\n```python\nclass A:\n    def f(self): pass\n```", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["dificil"]}
+{"id": "rota-raciocinio", "alvo": "roteamento", "entrada": "Compare as duas abordagens e justifique qual escala melhor, passo a passo", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["dificil"]}
+// A criticidade é o eixo que nenhum roteador estudado tem. "apaga" é trivial de
+// pontuar e catastrófico de errar: economizar meio centavo aqui sai caríssimo.
+{"id": "rota-critico-vence-tudo", "alvo": "roteamento", "entrada": "apaga", "contexto": {"tem_local": true, "critico": true, "saldo_usd": 0.0}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["criticidade"]}
+// Orçamento vira COMPORTAMENTO, não relatório: sem saldo, responder com modelo
+// fraco é melhor que não responder.
+{"id": "rota-sem-saldo", "alvo": "roteamento", "entrada": "me explique detalhadamente a arquitetura e compare com a anterior", "contexto": {"tem_local": true, "saldo_usd": 0.0}, "criterios": [{"tipo": "engine", "valor": "ollama"}], "etiquetas": ["orcamento"]}
+{"id": "rota-sem-local", "alvo": "roteamento", "entrada": "oi", "contexto": {"tem_local": false}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["degradacao"]}
+// A alternância c/qu do português: "explicar" tem C, "explique" tem QU. Uma
+// raiz `explic\w*` não casa com a forma imperativa — que é a mais provável numa
+// pergunta ao assistente. Custou uma investigação até os códigos de caractere.
+{"id": "rota-conjugacao-explique", "alvo": "roteamento", "entrada": "me explique este erro e analise o traceback, justificando cada passo", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["portugues"]}
+{"id": "rota-ferramentas-sobem", "alvo": "roteamento", "entrada": "liste meus arquivos da pasta de downloads", "contexto": {"tem_local": true, "tem_ferramentas": true}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["ferramentas"]}
+{"id": "rota-texto-longo", "alvo": "roteamento", "entrada": "Preciso que você leia o texto abaixo com atenção e me diga o que ele realmente propõe, porque eu li três vezes e continuo achando que tem contradição no meio. O autor começa dizendo que a arquitetura em camadas resolve o acoplamento, mas depois usa um exemplo em que a camada de baixo conhece a de cima. Ou eu entendi errado, ou o exemplo contradiz a tese. Me diga qual dos dois, e por quê, apontando o trecho exato onde a contradição aparece.", "contexto": {"tem_local": true}, "criterios": [{"tipo": "engine", "valor": "openrouter"}], "etiquetas": ["dificil"]}

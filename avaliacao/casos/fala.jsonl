@@ -1,0 +1,20 @@
+// Fala — o texto que vai pro motor de voz.
+//
+// Existe porque isto JÁ FOI defeito reclamado: o JARVIS lia "asterisco
+// asterisco importante" e soletrava emoji. O `fala-natural.js` resolveu, e este
+// arquivo é o que impede a regressão de voltar sem ninguém perceber.
+//
+// A tela renderiza marcação; a voz SOLETRA. É a mesma string com dois
+// consumidores de exigências opostas, e só um deles reclama alto.
+{"id": "fala-negrito", "alvo": "fala", "entrada": "Isso é **muito importante** e você precisa saber.", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": "muito importante"}], "etiquetas": ["markdown"]}
+{"id": "fala-titulo", "alvo": "fala", "entrada": "## Resumo do dia\nVocê tem três reuniões.", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": "tres reunioes"}], "etiquetas": ["markdown"]}
+{"id": "fala-lista", "alvo": "fala", "entrada": "Tarefas:\n- comprar pão\n- pagar a conta\n- ligar pro médico", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": ["comprar pao", "pagar a conta"]}], "etiquetas": ["markdown"]}
+{"id": "fala-codigo", "alvo": "fala", "entrada": "Use o comando `git status` para ver o estado.", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": "git status"}], "etiquetas": ["markdown"]}
+{"id": "fala-link", "alvo": "fala", "entrada": "Veja em [documentação oficial](https://exemplo.com/docs) os detalhes.", "criterios": [{"tipo": "sem_marcacao"}], "etiquetas": ["markdown"]}
+{"id": "fala-emoji", "alvo": "fala", "entrada": "Tudo pronto! 🚀 Deu certo ✅ e ficou rápido 🔥", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": "tudo pronto"}], "etiquetas": ["emoji"]}
+{"id": "fala-tabela", "alvo": "fala", "entrada": "| Item | Valor |\n|---|---|\n| Café | 5 reais |", "criterios": [{"tipo": "sem_marcacao"}], "etiquetas": ["markdown"]}
+{"id": "fala-url-crua", "alvo": "fala", "entrada": "O relatório está em https://exemplo.com/muito/longo/caminho.pdf para consulta.", "criterios": [{"tipo": "sem_marcacao"}], "etiquetas": ["url"]}
+// Não pode limpar demais: tirar a marcação e junto a informação seria trocar um
+// defeito por outro mais difícil de ver.
+{"id": "fala-preserva-conteudo", "alvo": "fala", "entrada": "O **prazo** final é dia 15 e o valor é R$ 1.200,00.", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": ["prazo", "dia 15", "1.200"]}], "etiquetas": ["preservacao"]}
+{"id": "fala-texto-limpo-passa-ileso", "alvo": "fala", "entrada": "Bom dia, Victor. Você tem duas reuniões hoje e nenhuma pendência.", "criterios": [{"tipo": "sem_marcacao"}, {"tipo": "contem", "valor": "duas reunioes hoje"}], "etiquetas": ["preservacao"]}

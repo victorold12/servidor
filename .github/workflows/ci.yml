@@ -28,20 +28,23 @@ jobs:
         with:
           node-version: 22
       - run: pip install -r requirements.txt
+      # O corredor resolve por dentro o que este passo resolvia com env: o
+      # runner do Windows entrega stdout em cp1252 e os testes imprimem "✓",
+      # então sem UTF-8 eles passam e ainda assim quebram o job com
+      # UnicodeEncodeError na hora de escrever o resultado. Mesmo comando aqui e
+      # na máquina do Victor, de propósito — comandos diferentes dão resultados
+      # diferentes e a divergência sempre aparece no pior momento.
       - name: Testes do backend (Windows)
         shell: bash
-        env:
-          # O runner do Windows entrega stdout em cp1252 e os testes imprimem
-          # "✓"/"—": sem isto eles passam e ainda assim quebram o job com
-          # UnicodeEncodeError na hora de escrever o resultado.
-          PYTHONIOENCODING: utf-8
+        run: python tests/roda.py
+      - name: Arnês de avaliação (Windows)
+        shell: bash
+        # Só os alvos determinísticos: `resposta` precisa de um Ollama rodando,
+        # que o runner não tem. Rodar `resposta` aqui exigiria a nuvem, e um
+        # arnês que gasta a cada push acaba com o orçamento do mês num dia.
         run: |
-          falhou=0
-          for t in tests/test_*.py; do
-            echo "--- $t"
-            python "$t" || falhou=1
-          done
-          exit $falhou
+          python avaliacao/executa.py --alvo roteamento --sem-gravar
+          python avaliacao/executa.py --alvo fala --sem-gravar
       - name: Testes do Agente Local (Windows)
         working-directory: agente-local
         run: npm install && npm test
@@ -82,15 +85,16 @@ jobs:
 
       - name: Testes do backend
         working-directory: servidor
-        env:
-          PYTHONIOENCODING: utf-8
+        run: python tests/roda.py
+
+      # Exercita a DECISÃO, não a propriedade. Foi um caso daqui que pegou o
+      # peso de ferramentas somando exatamente o limiar e mandando pro local —
+      # o teste unitário afirmava só que a pontuação sobe, e passava.
+      - name: Arnês de avaliação
+        working-directory: servidor
         run: |
-          falhou=0
-          for t in tests/test_*.py; do
-            echo "--- $t"
-            python "$t" || falhou=1
-          done
-          exit $falhou
+          python avaliacao/executa.py --alvo roteamento --sem-gravar
+          python avaliacao/executa.py --alvo fala --sem-gravar
 
       - name: Instala deps do Agente Local
         working-directory: servidor/agente-local

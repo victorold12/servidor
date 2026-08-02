@@ -96,8 +96,19 @@ def pontua(texto: str, *, historico: int = 0, tem_ferramentas: bool = False) -> 
 
     # Escolher ferramenta certa é onde modelo pequeno mais erra — e errar aqui
     # gasta uma rodada inteira, então o desconto do local evapora.
+    #
+    # 4 e não 3: com 3, um pedido curto COM ferramentas somava exatamente
+    # LIMIAR_LOCAL e ia pro local — a comparação é `<=`. A intenção escrita
+    # acima e a aritmética discordavam, e o teste unitário não via porque
+    # afirmava só que a pontuação SOBE (`com > sem`), não que a DECISÃO muda.
+    # Quem pegou foi o arnês de avaliação, no primeiro caso que exercitou o
+    # resultado em vez da propriedade.
+    #
+    # O painel já tratava isto como regra dura (`talvezLocal` devolve null
+    # quando há `tools`). Com 4 o pedido cai na zona cinzenta e sobe, que é a
+    # mesma conclusão sem cravar uma exceção absoluta.
     if tem_ferramentas:
-        p += 3
+        p += 4
 
     # Saudação e confirmação nunca precisam de modelo forte, por mais longa que
     # a conversa esteja. Este ramo vem por último pra sobrepor o resto.

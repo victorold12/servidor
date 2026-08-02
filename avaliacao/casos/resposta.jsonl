@@ -1,0 +1,18 @@
+// Resposta — o modelo respondendo de verdade. É o único alvo que CUSTA.
+//
+// Por padrão o arnês roda contra o modelo local (grátis, ~300ms). A nuvem é
+// opt-in e o corredor imprime a estimativa antes de gastar.
+//
+// Os critérios são deliberadamente FACTUAIS e verificáveis por substring. Um
+// arnês que exige julgamento de estilo em toda pergunta precisa de um juiz por
+// LLM, que custa e varia entre execuções — as duas coisas que um arnês menos
+// pode ter. Estilo entra pelo `juiz`, opt-in, em poucos casos.
+{"id": "resp-capital-franca", "alvo": "resposta", "entrada": "Qual é a capital da França? Responda em uma palavra.", "criterios": [{"tipo": "contem", "valor": "paris"}, {"tipo": "nao_vazio"}], "etiquetas": ["fato"]}
+{"id": "resp-descobrimento", "alvo": "resposta", "entrada": "Quem comandou a frota que chegou ao Brasil em 1500? Responda o sobrenome.", "criterios": [{"tipo": "contem", "valor": "cabral"}], "etiquetas": ["fato"]}
+{"id": "resp-aritmetica", "alvo": "resposta", "entrada": "Quanto é 17 vezes 23? Responda apenas o número.", "criterios": [{"tipo": "contem", "valor": "391"}], "etiquetas": ["calculo"]}
+{"id": "resp-portugues", "alvo": "resposta", "entrada": "Responda em português: qual a cor do céu em um dia limpo?", "criterios": [{"tipo": "regex", "valor": "azul"}, {"tipo": "nao_vazio"}], "etiquetas": ["idioma"]}
+{"id": "resp-obedece-formato", "alvo": "resposta", "entrada": "Diga apenas a palavra OK, nada mais.", "criterios": [{"tipo": "regex", "valor": "^\\W*ok\\W*$"}], "etiquetas": ["obediencia"]}
+// Não inventar é mais importante que acertar. Um assistente que responde com
+// confiança sobre o que não sabe é pior que um que diz "não sei".
+{"id": "resp-nao-inventa", "alvo": "resposta", "entrada": "Qual é o nome do meu cachorro? Se você não tem essa informação, diga que não sabe.", "criterios": [{"tipo": "regex", "valor": "n[ãa]o (sei|tenho|possuo)|n[ãa]o disponho|desconhe[çc]o|sem (essa )?informa[çc][ãa]o"}], "etiquetas": ["honestidade"]}
+{"id": "resp-latencia-local", "alvo": "resposta", "entrada": "diga apenas: pronto", "criterios": [{"tipo": "nao_vazio"}, {"tipo": "ate_ms", "valor": 20000}], "etiquetas": ["desempenho"]}

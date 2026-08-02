@@ -38,7 +38,8 @@ async def _post_chat(base: str, payload: dict, headers: dict) -> dict:
 
 async def chat(messages: list[dict], key: str, model: str | None = None,
                tools: list | None = None, plugins: list | None = None,
-               origem: str = "chat", engine: str | None = None) -> dict:
+               origem: str = "chat", engine: str | None = None,
+               extra: dict | None = None) -> dict:
     """Fala com o OpenRouter. Se não houver chave (ou a chamada falhar) e existir
     um Ollama configurado, cai nele — e marca `_provider` na resposta, pra quem
     chamou poder dizer ao usuário quem respondeu de verdade.
@@ -51,6 +52,13 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
         payload["tools"] = tools
     if plugins:
         payload["plugins"] = plugins
+    if extra:
+        # Parâmetros do protocolo que este projeto não fixa (temperature, top_p,
+        # seed). Aplicado DEPOIS dos campos acima e antes do fallback local, pra
+        # valer nos dois provedores — o arnês de avaliação depende de
+        # `temperature: 0` chegar tanto na nuvem quanto no Ollama, senão a
+        # comparação entre execuções mede ruído de amostragem.
+        payload.update(extra)
 
     async def _local() -> dict:
         local = dict(payload, model=settings.ollama_model)
