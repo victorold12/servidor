@@ -38,7 +38,7 @@ async def _post_chat(base: str, payload: dict, headers: dict) -> dict:
 
 async def chat(messages: list[dict], key: str, model: str | None = None,
                tools: list | None = None, plugins: list | None = None,
-               origem: str = "chat") -> dict:
+               origem: str = "chat", engine: str | None = None) -> dict:
     """Fala com o OpenRouter. Se não houver chave (ou a chamada falhar) e existir
     um Ollama configurado, cai nele — e marca `_provider` na resposta, pra quem
     chamou poder dizer ao usuário quem respondeu de verdade.
@@ -80,6 +80,22 @@ async def chat(messages: list[dict], key: str, model: str | None = None,
         telemetria.registra(provider="openrouter", model=model or settings.default_model,
                             origem=origem, ms=int((time.monotonic() - inicio) * 1000),
                             ok=False, erro=str(erro)[:200])
+
+    if engine == "ollama" and ollama_ready():
+        # LOCAL POR ESCOLHA, não por falha.
+        #
+        # O fallback abaixo já existia e continua: ele cobre "a nuvem caiu".
+        # Este ramo cobre coisa diferente — o roteador decidiu que esta pergunta
+        # não precisa de nuvem. É a diferença entre rede de segurança e economia:
+        # sem ele, o local só entra quando algo dá errado, e o custo nunca cai.
+        try:
+            return await _mede(await _local())
+        except Exception as e:
+            _mede_falha(e)
+            if not key:
+                raise
+            # Local escolhido mas indisponível: a nuvem atende em vez de falhar.
+            # O chamador descobre quem respondeu pelo `_provider`.
 
     if not key:
         if ollama_ready():
